@@ -2,7 +2,7 @@
     "AHK++.v2.file": {
         "compileBaseFile": "",
         "helpPath": "C:/Program Files/AutoHotkey/v2/AutoHotkey.chm",
-        "interpreterPath": "C:\\Temp\\AutoHotkey64.exe",
+        "interpreterPath": "C:\\Program Files\\AutoHotkey\\UX\\AutoHotkeyUX.exe",
         "maxScanDepth": 2,
         "templateSnippetName": "AhkTemplateV2"
     }
