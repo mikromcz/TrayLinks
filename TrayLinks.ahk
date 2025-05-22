@@ -41,8 +41,7 @@ global darkColors := {
 }
 
 ; Calculate dynamic height for a ListView based on item count
-CalculateMenuHeight(itemCount)
-{
+CalculateMenuHeight(itemCount) {
     ; Title area height (text + separator line)
     titleHeight := 40
 
@@ -68,8 +67,7 @@ CalculateMenuHeight(itemCount)
 }
 
 ; Function to handle opening the root folder
-OpenRootFolder(*)
-{
+OpenRootFolder(*) {
     global folderPath
 
     if DirExist(folderPath)
@@ -79,8 +77,7 @@ OpenRootFolder(*)
 }
 
 ; Close all menus
-CloseAllMenus()
-{
+CloseAllMenus() {
     global currentGuis, isMenuVisible
 
     for level, gui in currentGuis {
@@ -95,8 +92,7 @@ CloseAllMenus()
 }
 
 ; Close menus at and above specified level
-CloseMenusAtLevel(level)
-{
+CloseMenusAtLevel(level) {
     global currentGuis, currentPaths
 
     ; Simple approach: manually check for each possible level in descending order
@@ -111,8 +107,7 @@ CloseMenusAtLevel(level)
 }
 
 ; Handle ListView item click - Just select the item
-ItemClick(level, ctrl, *)
-{
+ItemClick(level, ctrl, *) {
     ; Get selected row
     rowNum := ctrl.GetNext(0)
     if (rowNum = 0 || rowNum > ctrl.itemData.Length)
@@ -142,8 +137,7 @@ ItemClick(level, ctrl, *)
 }
 
 ; Handle ListView item double-click - Open files/shortcuts
-ItemDoubleClick(level, ctrl, *)
-{
+ItemDoubleClick(level, ctrl, *) {
     ; Get selected row
     rowNum := ctrl.GetNext(0)
     if (rowNum = 0 || rowNum > ctrl.itemData.Length)
@@ -165,8 +159,7 @@ ItemDoubleClick(level, ctrl, *)
 }
 
 ; Create and show folder contents for a given level
-ShowFolderContents(folderToShow, level := 1)
-{
+ShowFolderContents(folderToShow, level := 1) {
     global currentGuis, currentPaths, darkColors, isMenuVisible
 
     ; Close menus at and above this level
@@ -197,14 +190,14 @@ ShowFolderContents(folderToShow, level := 1)
 
     ; Scan for directories first
     try {
-        Loop Files, folderToShow "\*", "D"  ; Only directories
+        loop files, folderToShow "\*", "D"  ; Only directories
         {
             ; Skip desktop.ini and hidden directories
             if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
                 continue
 
             ; Add to folders array
-            folders.Push({name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder"})
+            folders.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder" })
         }
     } catch as e {
         ; Handle error silently
@@ -212,14 +205,14 @@ ShowFolderContents(folderToShow, level := 1)
 
     ; Then scan for files
     try {
-        Loop Files, folderToShow "\*", "F"  ; Only files
+        loop files, folderToShow "\*", "F"  ; Only files
         {
             ; Skip desktop.ini and hidden files
             if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
                 continue
 
             ; Add to files array
-            files.Push({name: A_LoopFileName, path: A_LoopFileFullPath, type: "file"})
+            files.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "file" })
         }
     } catch as e {
         ; Handle error silently
@@ -233,7 +226,8 @@ ShowFolderContents(folderToShow, level := 1)
         numItems := 1
 
     ; Create ListView
-    listView := menuGui.Add("ListView", "x10 y40 w180 r" numItems " -Multi -Hdr Background" darkColors.background " c" darkColors.text, ["Name"])
+    listView := menuGui.Add("ListView", "x10 y40 w180 r" numItems " -Multi -Hdr Background" darkColors.background " c" darkColors
+        .text, ["Name"])
 
     ; Force no horizontal scrollbar using direct Windows API
     DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", 0x1033, "Ptr", 0x8, "Ptr", 0)  ; LVM_SETEXTENDEDLISTVIEWSTYLE with LVS_EX_NOHSCROLL
@@ -251,7 +245,7 @@ ShowFolderContents(folderToShow, level := 1)
     ; Add folders
     for folder in folders {
         row := listView.Add("", "📁 " folder.name)
-        listItems.Push({row: row, data: folder})
+        listItems.Push({ row: row, data: folder })
     }
 
     ; Add files - hide all extensions
@@ -259,7 +253,7 @@ ShowFolderContents(folderToShow, level := 1)
         ; Split filename to remove extension
         SplitPath(file.name, , , , &nameNoExt)
         row := listView.Add("", "↗️ " nameNoExt)
-        listItems.Push({row: row, data: file})
+        listItems.Push({ row: row, data: file })
     }
 
     ; Store items data with the ListView
@@ -320,8 +314,7 @@ ShowFolderContents(folderToShow, level := 1)
 }
 
 ; Handle global mouse clicks to close menus when clicking outside
-OnGlobalMouseClick(wParam, lParam, msg, hwnd)
-{
+OnGlobalMouseClick(wParam, lParam, msg, hwnd) {
     global currentGuis, isMenuVisible
 
     ; Only process if menus are visible
@@ -349,8 +342,7 @@ OnMessage(0x202, OnGlobalMouseClick)  ; WM_LBUTTONUP
 OnMessage(0x404, TrayIconClick)  ; WM_USER + 4 (0x400 + 4)
 
 ; Handle tray icon click
-TrayIconClick(wParam, lParam, *)
-{
+TrayIconClick(wParam, lParam, *) {
     global isMenuVisible, folderPath
 
     if (lParam = 0x201)  ; WM_LBUTTONDOWN
@@ -377,6 +369,16 @@ TrayIconClick(wParam, lParam, *)
     } else {
         ShowFolderContents(folderPath, 1)
     }
+}
+
+Esc:: ; Esc to close all
+{
+    global isMenuVisible
+
+    if (isMenuVisible) {
+        CloseAllMenus()
+    }
+
 }
 
 ; End of script
