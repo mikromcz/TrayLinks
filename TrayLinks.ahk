@@ -3,27 +3,136 @@
 
 #Requires AutoHotkey v2.0
 
-; Configuration - Using environment variables
-folderPath := EnvGet("onedrive") . "\Links"  ; Expanded path for internal use "%onedrive%\Links"
+; Configuration - INI file handling
+scriptDir := A_ScriptDir
+scriptName := A_ScriptName
+SplitPath(scriptName, , , , &nameNoExt)
+iniFile := scriptDir . "\" . nameNoExt . ".ini"
 
+; Function to expand environment variables in a path
+ExpandPath(path) {
+    ; Use ComObject to expand environment variables
+    shell := ComObject("WScript.Shell")
+    try {
+        return shell.ExpandEnvironmentStrings(path)
+    } catch {
+        ; If expansion fails, return original path
+        return path
+    }
+}
+
+; Function to create default INI file
+CreateDefaultIni() {
+    global iniFile
+
+    defaultContent := "
+(
+[Settings]
+; Folder path to display in the toolbar
+; Can use environment variables like %USERPROFILE%, %OneDrive%, etc.
+; Examples:
+;   FolderPath=C:\MyLinks
+;   FolderPath=%OneDrive%\Links
+;   FolderPath=%USERPROFILE%\Desktop\Shortcuts
+FolderPath=%OneDrive%\Links
+
+[Advanced]
+; Icon index from Shell32.dll (optional)
+IconIndex=4
+
+; Maximum menu levels (1-5)
+MaxLevels=3
+)"
+
+    try {
+        FileAppend(defaultContent, iniFile, "UTF-8")
+        return true
+    } catch as e {
+        MsgBox("Error creating INI file: " . e.Message, "Error", "Icon!")
+        return false
+    }
+}
+
+; Function to read configuration from INI
+ReadConfig() {
+    global iniFile
+
+    ; Check if INI file exists, create if not
+    if (!FileExist(iniFile)) {
+        if (!CreateDefaultIni()) {
+            ; If we can't create INI, use fallback
+            return {
+                folderPath: EnvGet("OneDrive") . "\Links",
+                iconIndex: 4,
+                maxLevels: 3
+            }
+        }
+    }
+
+    ; Read settings from INI
+    try {
+        rawPath := IniRead(iniFile, "Settings", "FolderPath", "%OneDrive%\Links")
+        iconIndex := IniRead(iniFile, "Advanced", "IconIndex", "4")
+        maxLevels := IniRead(iniFile, "Advanced", "MaxLevels", "3")
+
+        ; Expand environment variables in the path
+        expandedPath := ExpandPath(rawPath)
+
+        return {
+            folderPath: expandedPath,
+            iconIndex: Integer(iconIndex),
+            maxLevels: Integer(maxLevels)
+        }
+    } catch as e {
+        MsgBox("Error reading INI file: " . e.Message . "`nUsing default settings.", "Warning", "Icon!")
+        return {
+            folderPath: EnvGet("OneDrive") . "\Links",
+            iconIndex: 4,
+            maxLevels: 3
+        }
+    }
+}
+
+; Load configuration
+config := ReadConfig()
+folderPath := config.folderPath
+
+; Validate folder path
 if (!DirExist(folderPath)) {
-    MsgBox("Folder does not exist: " folderPath . "`nPlease check the path configuration.", "Error", "Icon!")
+    errorMsg := "Folder does not exist: " . folderPath . "`n`n"
+    errorMsg .= "Please check the FolderPath setting in: " . iniFile . "`n`n"
+    errorMsg .= "Current setting expands to: " . folderPath
+    MsgBox(errorMsg, "Configuration Error", "Icon!")
+
+    ; Offer to open INI file for editing
+    result := MsgBox("Would you like to open the configuration file for editing?", "Edit Configuration", "YesNo Icon?")
+    if (result = "Yes") {
+        try {
+            Run("notepad.exe `"" . iniFile . "`"")
+        } catch {
+            Run(iniFile)  ; Fallback to default associated program
+        }
+    }
     ExitApp
 }
 
 ; Set up the tray icon
 try {
-    TraySetIcon("Shell32.dll", 4)  ; Using folder icon
+    TraySetIcon("Shell32.dll", config.iconIndex)
 } catch {
     ; Fallback if that specific icon fails
 }
 
 ; Set tooltip for the tray icon
-A_IconTip := "Folder Links - Click for menu"
+A_IconTip := "Folder Links - Click for menu`nPath: " . folderPath
 
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
 A_TrayMenu.Add("Open Links Folder", OpenRootFolder)
+A_TrayMenu.Add()  ; Separator
+A_TrayMenu.Add("Edit Configuration", EditConfig)
+A_TrayMenu.Add("Reload Script", ReloadScript)
+A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Exit", (*) => ExitApp())
 A_TrayMenu.Default := "Open Links Folder"
 
@@ -38,6 +147,21 @@ global darkColors := {
     text: "FFFFFF",
     border: "404040",
     selected: "0078D7"
+}
+
+; Function to edit configuration
+EditConfig(*) {
+    global iniFile
+    try {
+        Run("notepad.exe `"" . iniFile . "`"")
+    } catch {
+        Run(iniFile)  ; Fallback to default associated program
+    }
+}
+
+; Function to reload script
+ReloadScript(*) {
+    Reload
 }
 
 ; Calculate dynamic height for a ListView based on item count
@@ -97,7 +221,7 @@ CloseMenusAtLevel(level) {
 
     ; Simple approach: manually check for each possible level in descending order
     ; This works because we only have a few levels (1, 2, 3)
-    for l in [3, 2, 1] {
+    for l in [5, 4, 3, 2, 1] {
         if (l >= level && currentGuis.Has(l) && IsObject(currentGuis[l])) {
             currentGuis[l].Destroy()
             currentGuis.Delete(l)
@@ -108,6 +232,8 @@ CloseMenusAtLevel(level) {
 
 ; Handle ListView item click - Just select the item
 ItemClick(level, ctrl, *) {
+    global config
+
     ; Get selected row
     rowNum := ctrl.GetNext(0)
     if (rowNum = 0 || rowNum > ctrl.itemData.Length)
@@ -118,6 +244,10 @@ ItemClick(level, ctrl, *) {
 
     ; For folders, navigate as before
     if (item.type = "folder") {
+        ; Check if we're at max level
+        if (level >= config.maxLevels)
+            return
+
         ; If folder in level 1, close level 2+ and open this folder
         if (level = 1) {
             CloseMenusAtLevel(2)  ; Close level 2 and above
@@ -129,7 +259,7 @@ ItemClick(level, ctrl, *) {
             ShowFolderContents(item.path, 3)  ; Show level 3
         }
         ; For deeper levels, just show next level
-        else if (level < 3) {  ; Limit to 3 levels
+        else if (level < config.maxLevels) {
             ShowFolderContents(item.path, level + 1)
         }
     }
