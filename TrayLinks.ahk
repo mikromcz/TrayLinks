@@ -451,22 +451,103 @@ OnGlobalMouseClick(wParam, lParam, msg, hwnd) {
     if (!isMenuVisible)
         return
 
-    ; Check if click was on any menu
+    ; Get the window under the mouse cursor
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(, , &winUnderMouse)
+
+    ; Check if click was on any menu or the tray icon
     clickedOnMenu := false
 
+    ; Check each menu GUI
     for level, gui in currentGuis {
-        if (IsObject(gui) && hwnd = gui.Hwnd)
+        if (IsObject(gui) && (winUnderMouse = gui.Hwnd || hwnd = gui.Hwnd)) {
             clickedOnMenu := true
+            break
+        }
     }
 
-    ; If clicked outside menus, close all
+    ; Also check if clicked on tray (to prevent closing when clicking tray icon)
+    try {
+        WinGetClass(&winClass, "ahk_id " . winUnderMouse)
+        if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow") {
+            clickedOnMenu := true
+        }
+    } catch {
+        ; Ignore errors
+    }
+
+    ; If clicked outside menus and not on tray, close all
     if (!clickedOnMenu) {
         CloseAllMenus()
     }
 }
 
-; Register for mouse clicks
+; Low-level mouse hook for better click detection
+LowLevelMouseProc(nCode, wParam, lParam) {
+    global isMenuVisible
+
+    ; Only process if menus are visible and it's a left button up
+    if (nCode >= 0 && isMenuVisible && wParam = 0x202) {  ; WM_LBUTTONUP
+        ; Get mouse position from the hook data
+        mouseData := NumGet(lParam, 0, "Int")  ; x coordinate
+        mouseY := NumGet(lParam, 4, "Int")     ; y coordinate
+
+        ; Get window under mouse
+        winUnderMouse := DllCall("WindowFromPoint", "Int64", mouseData | (mouseY << 32), "Ptr")
+
+        ; Check if click was on any menu
+        clickedOnMenu := false
+
+        for level, gui in currentGuis {
+            if (IsObject(gui) && winUnderMouse = gui.Hwnd) {
+                clickedOnMenu := true
+                break
+            }
+
+            ; Also check child windows (ListView controls)
+            if (IsObject(gui)) {
+                try {
+                    if (DllCall("IsChild", "Ptr", gui.Hwnd, "Ptr", winUnderMouse)) {
+                        clickedOnMenu := true
+                        break
+                    }
+                } catch {
+                    ; Ignore errors
+                }
+            }
+        }
+
+        ; Check if clicked on tray area
+        if (!clickedOnMenu) {
+            try {
+                WinGetClass(&winClass, "ahk_id " . winUnderMouse)
+                if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow" ||
+                    winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32") {
+                    clickedOnMenu := true
+                }
+            } catch {
+                ; Ignore errors
+            }
+        }
+
+        ; If clicked outside menus, close them
+        if (!clickedOnMenu) {
+            SetTimer(() => CloseAllMenus(), -1)  ; Use timer to avoid hook issues
+        }
+    }
+
+    ; Call next hook
+    return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
+}
+
+; Install low-level mouse hook for better click detection
+mouseHook := DllCall("SetWindowsHookEx", "Int", 14, "Ptr", CallbackCreate(LowLevelMouseProc), "Ptr", DllCall("GetModuleHandle", "Ptr", 0, "Ptr"), "UInt", 0, "Ptr")
+
+; Register for mouse clicks (backup method)
 OnMessage(0x202, OnGlobalMouseClick)  ; WM_LBUTTONUP
+
+; Clean up hook on exit
+OnExit((*) => DllCall("UnhookWindowsHookEx", "Ptr", mouseHook))
 
 ; Use OnMessage to detect when mouse clicks on tray icon
 OnMessage(0x404, TrayIconClick)  ; WM_USER + 4 (0x400 + 4)
