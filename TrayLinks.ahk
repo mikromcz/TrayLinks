@@ -582,7 +582,7 @@ TrayIconClick(wParam, lParam, *) {
     }
 }
 
-Esc:: ; Esc to close all
+/* Esc:: ; Esc to close all
 {
     global isMenuVisible
 
@@ -591,5 +591,6 @@ Esc:: ; Esc to close all
     }
 
 }
+ */
 
 ; End of script
