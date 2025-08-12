@@ -36,6 +36,10 @@ CreateDefaultIni() {
 ;   FolderPath=%USERPROFILE%\Desktop\Shortcuts
 FolderPath=%OneDrive%\Links
 
+; Dark mode setting (true/false or 1/0)
+; true = Dark mode, false = Light mode
+DarkMode=true
+
 [Advanced]
 ; Icon index from Shell32.dll (optional)
 IconIndex=4
@@ -64,7 +68,8 @@ ReadConfig() {
             return {
                 folderPath: EnvGet("OneDrive") . "\Links",
                 iconIndex: 4,
-                maxLevels: 3
+                maxLevels: 3,
+                darkMode: true
             }
         }
     }
@@ -72,23 +77,33 @@ ReadConfig() {
     ; Read settings from INI
     try {
         rawPath := IniRead(iniFile, "Settings", "FolderPath", "%OneDrive%\Links")
+        darkModeRaw := IniRead(iniFile, "Settings", "DarkMode", "true")
         iconIndex := IniRead(iniFile, "Advanced", "IconIndex", "4")
         maxLevels := IniRead(iniFile, "Advanced", "MaxLevels", "3")
 
         ; Expand environment variables in the path
         expandedPath := ExpandPath(rawPath)
 
+        ; Parse dark mode setting (handle true/false, 1/0, yes/no)
+        darkMode := true
+        darkModeRaw := Trim(StrLower(darkModeRaw))
+        if (darkModeRaw = "false" || darkModeRaw = "0" || darkModeRaw = "no") {
+            darkMode := false
+        }
+
         return {
             folderPath: expandedPath,
             iconIndex: Integer(iconIndex),
-            maxLevels: Integer(maxLevels)
+            maxLevels: Integer(maxLevels),
+            darkMode: darkMode
         }
     } catch as e {
         MsgBox("Error reading INI file: " . e.Message . "`nUsing default settings.", "Warning", "Icon!")
         return {
             folderPath: EnvGet("OneDrive") . "\Links",
             iconIndex: 4,
-            maxLevels: 3
+            maxLevels: 3,
+            darkMode: true
         }
     }
 }
@@ -124,7 +139,7 @@ try {
 }
 
 ; Set tooltip for the tray icon
-A_IconTip := "Folder Links - Click for menu`nPath: " . folderPath
+A_IconTip := "Folder Links - Click for menu`nPath: " . folderPath . "`nMode: " . (config.darkMode ? "Dark" : "Light")
 
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
@@ -141,12 +156,25 @@ global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
 global currentPaths := Map()     ; Store paths by level
 global isMenuVisible := false
 
-; Dark mode colors
+; Color schemes
 global darkColors := {
     background: "202020",
     text: "FFFFFF",
     border: "404040",
     selected: "0078D7"
+}
+
+global lightColors := {
+    background: "FFFFFF",
+    text: "000000",
+    border: "D0D0D0",
+    selected: "0078D7"
+}
+
+; Function to get current color scheme based on config
+GetColors() {
+    global config, darkColors, lightColors
+    return config.darkMode ? darkColors : lightColors
 }
 
 ; Function to edit configuration
@@ -290,7 +318,10 @@ ItemDoubleClick(level, ctrl, *) {
 
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
-    global currentGuis, currentPaths, darkColors, isMenuVisible
+    global currentGuis, currentPaths, isMenuVisible
+
+    ; Get current color scheme
+    colors := GetColors()
 
     ; Close menus at and above this level
     CloseMenusAtLevel(level)
@@ -300,8 +331,8 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Create new GUI
     menuGui := Gui("-Caption +ToolWindow +AlwaysOnTop")
-    menuGui.BackColor := darkColors.background
-    menuGui.SetFont("s10 c" darkColors.text, "Segoe UI")
+    menuGui.BackColor := colors.background
+    menuGui.SetFont("s10 c" colors.text, "Segoe UI")
 
     ; Get folder name for title
     SplitPath(folderToShow, &folderName)
@@ -312,7 +343,7 @@ ShowFolderContents(folderToShow, level := 1) {
     menuGui.Add("Text", "x10 y10 w180", folderName)
 
     ; Add a horizontal line
-    menuGui.Add("Text", "x10 y30 w180 h1 c" darkColors.border " 0x10")
+    menuGui.Add("Text", "x10 y30 w180 h1 c" colors.border " 0x10")
 
     ; Data structures
     folders := []
@@ -356,8 +387,7 @@ ShowFolderContents(folderToShow, level := 1) {
         numItems := 1
 
     ; Create ListView
-    listView := menuGui.Add("ListView", "x10 y40 w180 r" numItems " -Multi -Hdr Background" darkColors.background " c" darkColors
-        .text, ["Name"])
+    listView := menuGui.Add("ListView", "x10 y40 w180 r" numItems " -Multi -Hdr Background" colors.background " c" colors.text, ["Name"])
 
     ; Force no horizontal scrollbar using direct Windows API
     DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", 0x1033, "Ptr", 0x8, "Ptr", 0)  ; LVM_SETEXTENDEDLISTVIEWSTYLE with LVS_EX_NOHSCROLL
