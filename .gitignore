@@ -1,0 +1,22 @@
+# AutoHotkey compiled executables
+*.exe
+
+# Windows system files
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
+
+# IDE specific files
+.vscode/
+
+# Claude specific files
+.claude/
+
+# TrayLinks configuration files
+TrayLinks.ini
