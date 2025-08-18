@@ -12,11 +12,11 @@ iniFile := scriptDir . "\" . nameNoExt . ".ini"
 ; Function to expand environment variables in a path
 ExpandPath(path) {
     ; Use ComObject to expand environment variables
-    shell := ComObject("WScript.Shell")
     try {
+        shell := ComObject("WScript.Shell")
         return shell.ExpandEnvironmentStrings(path)
     } catch {
-        ; If expansion fails, return original path
+        ; If ComObject creation or expansion fails, return original path
         return path
     }
 }
@@ -69,7 +69,7 @@ ReadConfig() {
                 folderPath: EnvGet("OneDrive") . "\Links",
                 iconIndex: 4,
                 maxLevels: 3,
-                darkMode: true
+                darkMode: false
             }
         }
     }
@@ -77,7 +77,7 @@ ReadConfig() {
     ; Read settings from INI
     try {
         rawPath := IniRead(iniFile, "Settings", "FolderPath", "%OneDrive%\Links")
-        darkModeRaw := IniRead(iniFile, "Settings", "DarkMode", "true")
+        darkModeRaw := IniRead(iniFile, "Settings", "DarkMode", "false")
         iconIndex := IniRead(iniFile, "Advanced", "IconIndex", "4")
         maxLevels := IniRead(iniFile, "Advanced", "MaxLevels", "3")
 
@@ -103,7 +103,7 @@ ReadConfig() {
             folderPath: EnvGet("OneDrive") . "\Links",
             iconIndex: 4,
             maxLevels: 3,
-            darkMode: true
+            darkMode: false
         }
     }
 }
@@ -148,7 +148,7 @@ A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Edit Configuration", EditConfig)
 A_TrayMenu.Add("Reload Script", ReloadScript)
 A_TrayMenu.Add()  ; Separator
-A_TrayMenu.Add("Exit", (*) => ExitApp())
+A_TrayMenu.Add("Exit", ExitScript)
 A_TrayMenu.Default := "Open Links Folder"
 
 ; Global variables
@@ -192,6 +192,18 @@ ReloadScript(*) {
     Reload
 }
 
+; Function to exit script
+ExitScript(*) {
+    ; Clean shutdown - unhook mouse first to prevent interference
+    try {
+        DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
+    }
+    ; Close all menus
+    CloseAllMenus()
+    ; Force exit
+    ExitApp()
+}
+
 ; Calculate dynamic height for a ListView based on item count
 CalculateMenuHeight(itemCount) {
     ; Title area height (text + separator line)
@@ -207,11 +219,7 @@ CalculateMenuHeight(itemCount) {
     if (itemCount < 1)
         itemCount := 1
 
-    ; Calculate adjustment using logarithmic-style curve
-    ; This creates a very gentle curve that adds minimal extra padding as item count increases
-    adjustment := itemCount > 1 ? Sqrt(itemCount - 1) : 0
-
-    ; Final height calculation with fine-tuned adjustment
+    ; Final height calculation
     height := titleHeight + (itemCount * itemHeight) + targetPadding
 
     ; Constrain within reasonable min/max values
@@ -245,17 +253,38 @@ CloseAllMenus() {
 
 ; Close menus at and above specified level
 CloseMenusAtLevel(level) {
-    global currentGuis, currentPaths
+    global currentGuis, currentPaths, config
 
-    ; Simple approach: manually check for each possible level in descending order
-    ; This works because we only have a few levels (1, 2, 3)
-    for l in [5, 4, 3, 2, 1] {
-        if (l >= level && currentGuis.Has(l) && IsObject(currentGuis[l])) {
+    ; Check from max level down to the specified level
+    for l in Range(config.maxLevels, level, -1) {
+        if (currentGuis.Has(l) && IsObject(currentGuis[l])) {
             currentGuis[l].Destroy()
             currentGuis.Delete(l)
-            currentPaths.Delete(l)
+            if (currentPaths.Has(l))
+                currentPaths.Delete(l)
         }
     }
+}
+
+; Helper function to create a range with step
+Range(start, end, step := 1) {
+    result := []
+    if (step > 0) {
+        loop {
+            if (start > end)
+                break
+            result.Push(start)
+            start += step
+        }
+    } else {
+        loop {
+            if (start < end)
+                break
+            result.Push(start)
+            start += step
+        }
+    }
+    return result
 }
 
 ; Handle ListView item click - Just select the item
@@ -499,7 +528,9 @@ OnGlobalMouseClick(wParam, lParam, msg, hwnd) {
     ; Also check if clicked on tray (to prevent closing when clicking tray icon)
     try {
         WinGetClass(&winClass, "ahk_id " . winUnderMouse)
-        if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow") {
+        if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow" ||
+            winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32" ||
+            winClass = "#32768" || InStr(winClass, "Menu")) {
             clickedOnMenu := true
         }
     } catch {
@@ -547,12 +578,13 @@ LowLevelMouseProc(nCode, wParam, lParam) {
             }
         }
 
-        ; Check if clicked on tray area
+        ; Check if clicked on tray area or tray menu
         if (!clickedOnMenu) {
             try {
                 WinGetClass(&winClass, "ahk_id " . winUnderMouse)
                 if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow" ||
-                    winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32") {
+                    winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32" ||
+                    winClass = "#32768" || InStr(winClass, "Menu")) {
                     clickedOnMenu := true
                 }
             } catch {
