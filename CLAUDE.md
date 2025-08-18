@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TrayLinks is an AutoHotkey v2.0 script that creates a customizable system tray utility providing quick access to folders and files through cascading menus. The application displays a folder icon in the system tray and shows hierarchical folder menus when clicked.
+TrayLinks is a modern AutoHotkey v2.0 script that creates a sophisticated system tray utility with authentic Windows 11 styling. It provides quick access to folders and files through beautiful cascading menus featuring Fluent Design elements, dynamic theming, and contextual file type icons.
 
 ## Core Architecture
 
@@ -16,11 +16,12 @@ The script follows a functional architecture with these key components:
    - Environment variable expansion (e.g., %OneDrive%, %USERPROFILE%)
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **GUI System** (`TrayLinks.ahk:319-474`)
-   - Dynamic menu creation using AutoHotkey GUI controls
-   - ListView-based folder/file display with icons (📁 for folders, ↗️ for files)
-   - Cascading menus that position left-to-right based on level
-   - Dynamic height calculation based on item count
+2. **Windows 11 GUI System** (`TrayLinks.ahk:430-600`)
+   - Modern menu creation with Fluent Design styling
+   - Two-column ListView workaround for precise left padding control
+   - Contextual file type icons with smart recognition (`GetFileIcon()`)
+   - Windows DWM API integration for rounded corners and drop shadows
+   - Dynamic height calculation with consistent 8px bottom padding
 
 3. **Event Handling** (`TrayLinks.ahk:261-317`, `TrayLinks.ahk:476-581`)
    - Single-click navigation for folders
@@ -38,10 +39,11 @@ The script follows a functional architecture with these key components:
 - **Settings Section**: FolderPath (supports env vars), DarkMode toggle
 - **Advanced Section**: IconIndex (Shell32.dll), MaxLevels (1-5)
 
-### Color Theming
-Two built-in themes controlled by DarkMode setting:
-- Dark: #202020 background, white text, blue selection
-- Light: White background, black text, blue selection
+### Windows 11 Color Theming
+Two authentic Windows 11 themes controlled by DarkMode setting:
+- **Dark Mode**: `#2D2D2D` background, `#3C3C3C` elevated surfaces, `#005FB8` accent
+- **Light Mode**: `#F9F9F9` background, white elevated surfaces, `#005FB8` accent
+- **Typography**: Segoe UI Variable font with semi-bold titles and proper hierarchy
 
 ## Development Environment
 
@@ -78,10 +80,12 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:320-474`) - Core menu creation logic
-2. **ReadConfig()** (`TrayLinks.ahk:61-109`) - INI parsing and env var expansion  
-3. **ItemClick/ItemDoubleClick()** (`TrayLinks.ahk:262-317`) - User interaction handlers
-4. **CloseMenusAtLevel()** (`TrayLinks.ahk:247-259`) - Menu hierarchy management
+1. **ShowFolderContents()** (`TrayLinks.ahk:430-600`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:190-211`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:213-267`) - Contextual file type icon selection
+4. **CalculateMenuHeight()** (`TrayLinks.ahk:296-309`) - Precise height calculation for consistent padding
+5. **ReadConfig()** (`TrayLinks.ahk:61-109`) - INI parsing with DarkMode support
+6. **ReloadScript()** (`TrayLinks.ahk:279-291`) - Clean resource management during reload
 
 ## User Interface Guidelines
 
@@ -92,10 +96,11 @@ TrayLinks/
 - Auto-positioning prevents off-screen menus
 
 ### File Display Rules
-- Folders show first with 📁 prefix
-- Files show after folders with ↗️ prefix  
-- File extensions are hidden in display
-- Hidden files and desktop.ini are filtered out
+- Folders show first with 🗂️ icon (modern file folder)
+- Files show contextual icons: 📄 documents, 🎬 videos, 🖼️ images, etc.
+- File extensions are hidden in display for cleaner appearance
+- Hidden files and desktop.ini are automatically filtered out
+- Two-column ListView provides precise left padding control
 
 ## Error Handling Patterns
 
@@ -106,18 +111,50 @@ The script uses try-catch blocks around:
 
 Configuration errors show user-friendly dialogs with options to edit the INI file.
 
+## Windows 11 Implementation Details
+
+### Fluent Design Integration
+- **DWM APIs**: `DwmSetWindowAttribute` for rounded corners and drop shadows
+- **Modern Colors**: Authentic Windows 11 color palette with proper contrast ratios
+- **Typography**: Segoe UI Variable font with weight variations for hierarchy
+- **Spacing**: Microsoft-standard 8px base unit for consistent padding
+
+### ListView Optimization
+- **Two-Column Workaround**: First column with 0 width for precise left padding control
+- **Scrollbar Removal**: Multiple methods including `ShowScrollBar` API calls
+- **Dynamic Sizing**: Actual ListView height measurement for perfect window sizing
+- **Icon System**: 20+ contextual file type icons with smart extension mapping
+
+### Resource Management
+- **Clean Shutdown**: Proper mouse hook cleanup in `ExitScript()` and `ReloadScript()`
+- **Memory Efficiency**: Automatic GUI resource cleanup when menus close
+- **Performance**: Optimized Windows API calls and minimal resource usage
+
 ## Windows API Integration
 
 Key Windows API usage:
-- Low-level mouse hook for global click detection
-- Shell32.dll icon extraction for tray icon
-- Window positioning and styling APIs
-- Environment variable expansion via WScript.Shell
+- **DWM APIs**: Window styling, rounded corners, drop shadows
+- **Low-level mouse hook**: Global click detection with proper cleanup
+- **ShowScrollBar**: Comprehensive scrollbar removal
+- **Shell32.dll**: Icon extraction for tray icon
+- **WScript.Shell**: Environment variable expansion with error handling
 
 ## Testing Considerations
 
 When modifying the script:
-1. Test with empty folders, folders with many items, and nested structures
-2. Verify environment variable expansion with different Windows setups  
-3. Test menu positioning on different screen configurations
-4. Verify proper cleanup of GUI resources and hooks on script exit
+1. **Visual Testing**: Verify Windows 11 styling on both dark and light themes
+2. **Layout Testing**: Test with various folder sizes (empty, single item, many items)
+3. **Environment Testing**: Verify environment variable expansion across different Windows setups
+4. **Screen Testing**: Test menu positioning on multi-monitor setups and different DPI settings
+5. **Resource Testing**: Verify proper cleanup of GUI resources, mouse hooks, and DWM styling
+6. **Theme Testing**: Test theme switching and reload functionality
+7. **Icon Testing**: Verify contextual file type icons display correctly for various file types
+
+## Code Style Guidelines
+
+- **Windows 11 Colors**: Use the defined color constants in `darkColors` and `lightColors` objects
+- **Spacing**: Maintain 8px base padding unit for consistency
+- **Typography**: Use Segoe UI Variable with appropriate font weights
+- **Error Handling**: Always wrap Windows API calls in try-catch blocks
+- **Resource Cleanup**: Ensure proper cleanup in exit and reload functions
+- **ListView Management**: Use two-column approach for padding control

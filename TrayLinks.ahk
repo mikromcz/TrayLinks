@@ -156,25 +156,114 @@ global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
 global currentPaths := Map()     ; Store paths by level
 global isMenuVisible := false
 
-; Color schemes
+; Windows 11 Fluent Design color schemes
 global darkColors := {
-    background: "202020",
+    background: "2D2D2D",      ; Windows 11 dark background
+    backgroundCard: "3C3C3C",  ; Card/elevated surface
     text: "FFFFFF",
-    border: "404040",
-    selected: "0078D7"
+    textSecondary: "C5C5C5",   ; Secondary text
+    border: "484848",          ; Subtle border
+    borderAccent: "5A5A5A",    ; Accent border
+    selected: "005FB8",        ; Windows 11 accent blue
+    selectedHover: "0078D4",   ; Hover state
+    shadow: "000000"
 }
 
 global lightColors := {
-    background: "FFFFFF",
+    background: "F9F9F9",      ; Windows 11 light background (slightly off-white)
+    backgroundCard: "FFFFFF",  ; Card/elevated surface
     text: "000000",
-    border: "D0D0D0",
-    selected: "0078D7"
+    textSecondary: "605E5C",   ; Secondary text
+    border: "E1DFDD",          ; Subtle border
+    borderAccent: "D1D1D1",    ; Accent border
+    selected: "005FB8",        ; Windows 11 accent blue
+    selectedHover: "0078D4",   ; Hover state
+    shadow: "00000020"         ; Light shadow with transparency
 }
 
 ; Function to get current color scheme based on config
 GetColors() {
     global config, darkColors, lightColors
     return config.darkMode ? darkColors : lightColors
+}
+
+; Apply Windows 11 modern styling to GUI windows
+ApplyWindows11Styling(hwnd) {
+    ; Apply drop shadow and rounded corners using DWM API
+    try {
+        ; Enable drop shadow
+        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)
+
+        ; Set rounded corners (Windows 11 style)
+        ; DWMWCP_ROUND = 2 for rounded corners
+        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 33, "UInt*", 2, "UInt", 4)
+
+        ; Set border color to match theme
+        colors := GetColors()
+        borderColor := "0x" colors.borderAccent
+        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 34, "UInt*", borderColor, "UInt", 4)
+    } catch {
+        ; Fallback for older Windows versions - just apply a subtle border
+        try {
+            WinSetStyle("+0x800000", hwnd)  ; WS_BORDER
+        }
+    }
+}
+
+; Get appropriate icon for file type (Windows 11 style)
+GetFileIcon(extension) {
+    extension := StrLower(extension)
+
+    ; Document files
+    if (extension = "txt" || extension = "rtf" || extension = "doc" || extension = "docx")
+        return "📄"
+
+    ; PDF files
+    if (extension = "pdf")
+        return "📕"
+
+    ; Spreadsheet files
+    if (extension = "xls" || extension = "xlsx" || extension = "csv")
+        return "📊"
+
+    ; Presentation files
+    if (extension = "ppt" || extension = "pptx")
+        return "📋"
+
+    ; Image files
+    if (extension = "jpg" || extension = "jpeg" || extension = "png" || extension = "gif" || extension = "bmp" || extension = "ico")
+        return "🖼️"
+
+    ; Video files
+    if (extension = "mp4" || extension = "avi" || extension = "mkv" || extension = "mov" || extension = "wmv")
+        return "🎬"
+
+    ; Audio files
+    if (extension = "mp3" || extension = "wav" || extension = "flac" || extension = "m4a")
+        return "🎵"
+
+    ; Archive files
+    if (extension = "zip" || extension = "rar" || extension = "7z" || extension = "tar" || extension = "gz")
+        return "🗜️"
+
+    ; Executable files
+    if (extension = "exe" || extension = "msi" || extension = "bat" || extension = "cmd")
+        return "⚙️"
+
+    ; Web files
+    if (extension = "html" || extension = "htm" || extension = "php" || extension = "css" || extension = "js")
+        return "🌐"
+
+    ; Code files
+    if (extension = "py" || extension = "cpp" || extension = "c" || extension = "java" || extension = "cs" || extension = "go")
+        return "📝"
+
+    ; Shortcuts and links
+    if (extension = "lnk" || extension = "url")
+        return "🔗"
+
+    ; Default for unknown files
+    return "📄"
 }
 
 ; Function to edit configuration
@@ -189,6 +278,15 @@ EditConfig(*) {
 
 ; Function to reload script
 ReloadScript(*) {
+    ; Clean shutdown before reload - unhook mouse first to prevent interference
+    try {
+        DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
+    }
+    ; Close all menus
+    CloseAllMenus()
+    ; Small delay to ensure cleanup completes
+    Sleep(100)
+    ; Now reload
     Reload
 }
 
@@ -204,26 +302,19 @@ ExitScript(*) {
     ExitApp()
 }
 
-; Calculate dynamic height for a ListView based on item count
-CalculateMenuHeight(itemCount) {
-    ; Title area height (text + separator line)
+; Calculate dynamic height for a menu window with consistent padding
+CalculateMenuHeight(listViewHeight, itemCount := 0) {
+    ; Title area height with Windows 11 spacing (title + padding, no separator)
     titleHeight := 40
 
-    ; Height per item - adjusted based on empirical testing
-    itemHeight := 21
+    ; Consistent bottom padding for all item counts
+    bottomPadding := 8
 
-    ; Target bottom padding
-    targetPadding := 16
+    ; Total window height = title area + ListView height + bottom padding
+    height := titleHeight + listViewHeight + bottomPadding
 
-    ; Ensure at least one item
-    if (itemCount < 1)
-        itemCount := 1
-
-    ; Final height calculation
-    height := titleHeight + (itemCount * itemHeight) + targetPadding
-
-    ; Constrain within reasonable min/max values
-    return Max(80, Min(600, height))
+    ; No minimum height constraint - let it size naturally
+    return Min(640, height)
 }
 
 ; Function to handle opening the root folder
@@ -358,21 +449,20 @@ ShowFolderContents(folderToShow, level := 1) {
     ; Remember the path for this level
     currentPaths[level] := folderToShow
 
-    ; Create new GUI
+    ; Create new GUI with Windows 11 styling
     menuGui := Gui("-Caption +ToolWindow +AlwaysOnTop")
-    menuGui.BackColor := colors.background
-    menuGui.SetFont("s10 c" colors.text, "Segoe UI")
+    menuGui.BackColor := colors.backgroundCard
+    ; Use Segoe UI Variable (Windows 11 font) with slightly larger size
+    menuGui.SetFont("s10 c" colors.text, "Segoe UI Variable")
 
     ; Get folder name for title
     SplitPath(folderToShow, &folderName)
     if (level = 1 && folderToShow = folderPath)
         folderName := "Links"
 
-    ; Add title
-    menuGui.Add("Text", "x10 y10 w180", folderName)
-
-    ; Add a horizontal line
-    menuGui.Add("Text", "x10 y30 w180 h1 c" colors.border " 0x10")
+    ; Add title with modern spacing and clean Windows 11 styling
+    titleText := menuGui.Add("Text", "x16 y12 w172 c" colors.text, folderName)
+    titleText.SetFont("s10 w600")  ; Semi-bold for title
 
     ; Data structures
     folders := []
@@ -415,14 +505,23 @@ ShowFolderContents(folderToShow, level := 1) {
     if (numItems < 1)
         numItems := 1
 
-    ; Create ListView
-    listView := menuGui.Add("ListView", "x10 y40 w180 r" numItems " -Multi -Hdr Background" colors.background " c" colors.text, ["Name"])
+    ; Create ListView with Windows 11 styling - two columns for padding control
+    listView := menuGui.Add("ListView", "x12 y36 w176 r" numItems " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
 
-    ; Force no horizontal scrollbar using direct Windows API
+    ; Force no scrollbars using multiple methods
     DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", 0x1033, "Ptr", 0x8, "Ptr", 0)  ; LVM_SETEXTENDEDLISTVIEWSTYLE with LVS_EX_NOHSCROLL
 
-    ; Disable horizontal scrollbar style
-    WinSetStyle(-0x20000, listView.Hwnd)  ; Remove LVS_HSCROLL style (0x20000)
+    ; Disable both horizontal and vertical scrollbar styles
+    WinSetStyle(-0x20000, listView.Hwnd)   ; Remove LVS_HSCROLL style
+    WinSetStyle(-0x200000, listView.Hwnd)  ; Remove WS_VSCROLL style
+
+    ; Additional scrollbar removal via ShowScrollBar API
+    DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; Hide horizontal scrollbar
+    DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 1, "Int", 0)  ; Hide vertical scrollbar
+
+    ; Set column widths: first column 0px (invisible), second column smaller to prevent horizontal scroll
+    listView.ModifyCol(1, 0)      ; First column width = 0 (hidden)
+    listView.ModifyCol(2, 160)    ; Second column slightly smaller to prevent scrollbars
 
     ; Add event handlers for click and double-click
     listView.OnEvent("Click", ItemClick.Bind(level))
@@ -431,25 +530,31 @@ ShowFolderContents(folderToShow, level := 1) {
     ; Add items to the ListView (folders first)
     listItems := []
 
-    ; Add folders
+    ; Add folders with Windows 11 style icons - using second column
     for folder in folders {
-        row := listView.Add("", "📁 " folder.name)
+        row := listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
         listItems.Push({ row: row, data: folder })
     }
 
-    ; Add files - hide all extensions
+    ; Add files - hide all extensions with modern icons - using second column
     for file in files {
         ; Split filename to remove extension
-        SplitPath(file.name, , , , &nameNoExt)
-        row := listView.Add("", "↗️ " nameNoExt)
+        SplitPath(file.name, , , &ext, &nameNoExt)
+
+        ; Choose icon based on file type (Windows 11 style)
+        icon := GetFileIcon(ext)
+        row := listView.Add("", "", icon . " " nameNoExt)  ; Empty first column, data in second
         listItems.Push({ row: row, data: file })
     }
 
     ; Store items data with the ListView
     listView.itemData := listItems
 
-    ; Calculate menu height using our helper function
-    menuHeight := CalculateMenuHeight(numItems)
+    ; Get the actual ListView height after items are added
+    WinGetPos(, , , &actualListViewHeight, "ahk_id " listView.Hwnd)
+
+    ; Calculate menu height using actual ListView height for consistent bottom padding
+    menuHeight := CalculateMenuHeight(actualListViewHeight, numItems)
 
     ; Position window based on level
     winWidth := 200  ; Fixed width at 200px
@@ -494,6 +599,9 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Show the GUI with the dynamic height
     menuGui.Show("x" winX " y" winY " w" winWidth " h" menuHeight " NoActivate")
+
+    ; Apply Windows 11 styling (drop shadow and rounded corners)
+    ApplyWindows11Styling(menuGui.Hwnd)
 
     ; Store the GUI for this level
     currentGuis[level] := menuGui

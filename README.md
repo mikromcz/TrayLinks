@@ -1,21 +1,33 @@
-# AutoHotkey Folder Toolbar
+# TrayLinks - Windows 11 Style Folder Toolbar
 
-A customizable system tray utility that provides quick access to folders and files through cascading menus that appear on the left side of your cursor.
+A modern system tray utility that provides quick access to folders and files through beautiful cascading menus with authentic Windows 11 styling.
 
 ![AutoHotkey](https://img.shields.io/badge/AutoHotkey-v2.0+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)
 
 ## ✨ Features
 
-- **System Tray Integration**: Clean tray icon with folder access
+### 🎨 Modern Windows 11 Design
+- **Fluent Design System**: Authentic Windows 11 appearance with rounded corners and drop shadows
+- **Dynamic Theming**: Beautiful dark and light modes that adapt to your preferences
+- **Modern Typography**: Segoe UI Variable font with proper visual hierarchy
+- **Smart File Icons**: Contextual icons for different file types (📄 documents, 🎬 videos, 🖼️ images, etc.)
+- **Perfect Spacing**: Consistent padding and margins following Microsoft's design guidelines
+
+### 🚀 Core Functionality
+- **System Tray Integration**: Clean tray icon with intuitive folder access
 - **Cascading Menus**: Navigate through subfolders with up to 5 levels deep
-- **Dark Theme**: Modern dark UI that's easy on the eyes
-- **Configurable Paths**: Support for both absolute paths and environment variables
 - **Smart Positioning**: Menus appear to the left of each other, preventing screen overflow
-- **File Type Recognition**: Folders show 📁 icon, files show ↗️ icon
 - **Quick Actions**: Single-click to navigate, double-click to open files
-- **Keyboard Shortcuts**: Win+F to toggle menu, Esc to close
+- **Configurable Paths**: Full support for environment variables and network paths
 - **Auto-Configuration**: Creates INI file automatically with sensible defaults
+
+### ⌨️ User Experience
+- **Keyboard Shortcuts**: Win+F to toggle menu
+- **Click Outside to Close**: Intuitive menu dismissal
+- **Smooth Interactions**: Responsive design with proper hover states
+- **Clean Exit**: Reliable script reloading and exit functionality
 
 ## 🚀 Quick Start
 
@@ -29,7 +41,7 @@ A customizable system tray utility that provides quick access to folders and fil
 
 The script automatically creates an INI file (same name as the script) with these settings:
 
-### `FolderToolbar.ini` Example:
+### `TrayLinks.ini` Example:
 ```ini
 [Settings]
 ; Folder path to display in the toolbar
@@ -39,6 +51,11 @@ The script automatically creates an INI file (same name as the script) with thes
 ;   FolderPath=%OneDrive%\Links
 ;   FolderPath=%USERPROFILE%\Desktop\Shortcuts
 FolderPath=%OneDrive%\Links
+
+; Dark mode setting (true/false or 1/0)
+; true = Dark mode with Windows 11 dark theme
+; false = Light mode with Windows 11 light theme
+DarkMode=true
 
 [Advanced]
 ; Icon index from Shell32.dll (optional)
@@ -99,6 +116,12 @@ FolderPath=\\server\shared\tools
 2. Modify the `FolderPath` setting
 3. Right-click the tray icon → "Reload Script"
 
+### Switching Themes:
+Toggle between Windows 11 dark and light themes:
+1. Right-click the tray icon → "Edit Configuration"
+2. Set `DarkMode=true` for dark theme or `DarkMode=false` for light theme
+3. Right-click the tray icon → "Reload Script"
+
 ### Changing the Icon:
 Modify `IconIndex` in the INI file. Common Shell32.dll icons:
 - `3` - Computer/PC icon
@@ -154,6 +177,35 @@ Set `MaxLevels` to control how deep the menus can go (1-5 levels supported).
 - **Backup Settings**: Keep a backup of your INI file when you have it configured perfectly
 - **Network Paths**: Works with network drives and UNC paths
 - **Hidden Files**: Hidden and system files are automatically filtered out
+
+## 🎨 Windows 11 Design Details
+
+### Visual Features
+- **Fluent Design**: Authentic Windows 11 appearance with proper rounded corners
+- **Drop Shadows**: Modern elevation effects using Windows DWM APIs
+- **Color Schemes**: 
+  - **Dark Mode**: `#2D2D2D` backgrounds with `#3C3C3C` elevated surfaces
+  - **Light Mode**: `#F9F9F9` backgrounds with pure white cards
+- **Typography**: Segoe UI Variable font with semi-bold titles
+- **File Type Icons**: Smart contextual icons:
+  - 🗂️ Folders
+  - 📄 Documents (TXT, DOC, etc.)
+  - 📕 PDF files
+  - 📊 Spreadsheets (XLS, CSV)
+  - 🖼️ Images (JPG, PNG, etc.)
+  - 🎬 Videos (MP4, AVI, etc.)
+  - 🎵 Audio files (MP3, WAV, etc.)
+  - 🗜️ Archives (ZIP, RAR, etc.)
+  - ⚙️ Executables (EXE, MSI, etc.)
+  - 🌐 Web files (HTML, CSS, JS)
+  - 🔗 Shortcuts and links
+
+### Technical Implementation
+- **DWM Integration**: Uses Windows Desktop Window Manager for native styling
+- **Precise Spacing**: Consistent 8px padding with perfect alignment
+- **No Scrollbars**: Clean ListView implementation without scroll indicators
+- **Optimized Layout**: Dynamic height calculation for perfect fit
+- **Resource Management**: Proper cleanup for smooth reloading
 
 ## 📄 License
 
