@@ -1,5 +1,9 @@
-﻿; AutoHotkey2 Folder Toolbar Script
-; Creates a system tray icon with folder menus that open on the left side
+﻿/**
+ * @description AutoHotkey2 Folder Toolbar Script
+ * Creates a system tray icon with folder menus that open on the left side
+ * @author mikrom, ClaudeAI
+ * @version 2.0.0
+ */
 
 #Requires AutoHotkey v2.0
 
@@ -143,13 +147,15 @@ A_IconTip := "Folder Links - Click for menu`nPath: " . folderPath . "`nMode: " .
 
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
-A_TrayMenu.Add("Open Links Folder", OpenRootFolder)
+A_TrayMenu.Add("TrayLinks", (*) => {})  ; Script name (non-clickable)
+A_TrayMenu.Add("v2.0.0", (*) => {})     ; Version (non-clickable)
 A_TrayMenu.Add()  ; Separator
+A_TrayMenu.Add("Open Links Folder", OpenRootFolder)
 A_TrayMenu.Add("Edit Configuration", EditConfig)
 A_TrayMenu.Add("Reload Script", ReloadScript)
 A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Exit", ExitScript)
-A_TrayMenu.Default := "Open Links Folder"
+A_TrayMenu.Default := "TrayLinks"
 
 ; Global variables
 global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
