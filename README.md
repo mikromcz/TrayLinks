@@ -20,8 +20,10 @@ A modern system tray utility that provides quick access to folders and files thr
 - **Cascading Menus**: Navigate through subfolders with up to 5 levels deep
 - **Smart Positioning**: Menus appear to the left of each other, preventing screen overflow
 - **Quick Actions**: Single-click to navigate, double-click to open files
-- **Configurable Paths**: Full support for environment variables and network paths
+- **Configurable Paths**: Full support for environment variables, network paths, and Unicode characters
 - **Auto-Configuration**: Creates INI file automatically with sensible defaults
+- **Large Folder Support**: Handles folders with hundreds of items with automatic scrolling
+- **Dynamic Versioning**: Version information automatically extracted from script header
 
 ### ⌨️ User Experience
 - **Keyboard Shortcuts**: Win+F to toggle menu
@@ -74,6 +76,12 @@ MaxLevels=3
 - `%DOWNLOADS%` - Downloads folder
 - Any Windows environment variable
 
+### Unicode Support:
+Full support for international characters in folder and file names, including:
+- European characters (ěščř, áéíóú, ñç, etc.)
+- Cyrillic, Asian, and other character sets
+- Network paths with Unicode characters
+
 ### Configuration Examples:
 ```ini
 # OneDrive Links folder
@@ -104,23 +112,24 @@ FolderPath=\\server\shared\tools
 - **Esc**: Close all open menus
 
 ### Context Menu Options:
+- **TrayLinks**: Click to open GitHub repository
+- **Version (e.g., v3.1.0)**: Click to open GitHub repository  
 - **Open Links Folder**: Opens root folder in Windows Explorer
 - **Edit Configuration**: Opens INI file for editing
-- **Reload Script**: Reloads the script after configuration changes
 - **Exit**: Closes the application
 
 ## 🛠️ Customization
 
 ### Changing the Folder Path:
 1. Right-click the tray icon → "Edit Configuration"
-2. Modify the `FolderPath` setting
-3. Right-click the tray icon → "Reload Script"
+2. Modify the `FolderPath` setting (supports Unicode characters like ěščř)
+3. Save the file - the script will automatically detect changes
 
 ### Switching Themes:
 Toggle between Windows 11 dark and light themes:
 1. Right-click the tray icon → "Edit Configuration"
 2. Set `DarkMode=true` for dark theme or `DarkMode=false` for light theme
-3. Right-click the tray icon → "Reload Script"
+3. Save the file - the script will automatically detect changes
 
 ### Changing the Icon:
 Modify `IconIndex` in the INI file. Common Shell32.dll icons:
@@ -215,7 +224,7 @@ This project is open source and available under the MIT License.
 
 - Very long file names might be truncated in the display
 - Network paths may have slower response times
-- Some special characters in folder names might not display correctly
+- Horizontal scrollbar may briefly flash when opening large folders (automatically hidden)
 
 ## 💡 Feature Ideas
 

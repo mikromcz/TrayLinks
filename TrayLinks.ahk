@@ -2,7 +2,7 @@
  * @description AutoHotkey2 Folder Toolbar Script
  * Creates a system tray icon with folder menus that open on the left side
  * @author mikrom, ClaudeAI
- * @version 2.0.0
+ * @version 3.1.0
  */
 
 #Requires AutoHotkey v2.0
@@ -61,6 +61,48 @@ MaxLevels=3
     }
 }
 
+; Function to parse INI value from content with Unicode support
+ParseIniValue(iniContent, section, key, defaultValue) {
+    ; Create regex patterns for section and key
+    sectionPattern := "i)^\s*\[\s*" . RegExReplace(section, "[\[\]\\^$.*+?{}()|]", "\$0") . "\s*\]\s*$"
+    keyPattern := "i)^\s*" . RegExReplace(key, "[\[\]\\^$.*+?{}()|]", "\$0") . "\s*=\s*(.*?)\s*$"
+
+    ; Split content into lines
+    lines := StrSplit(iniContent, "`n", "`r")
+
+    ; Find the section
+    inSection := false
+    for lineNum, line in lines {
+        line := Trim(line)
+
+        ; Skip empty lines and comments
+        if (line = "" || SubStr(line, 1, 1) = ";" || SubStr(line, 1, 1) = "#")
+            continue
+
+        ; Check if this is the start of our section
+        if (RegExMatch(line, sectionPattern)) {
+            inSection := true
+            continue
+        }
+
+        ; Check if this is the start of a different section
+        if (RegExMatch(line, "^\s*\[.*\]\s*$")) {
+            if (inSection)
+                break
+            continue
+        }
+
+        ; If we're in the right section, look for our key
+        if (inSection) {
+            if (RegExMatch(line, keyPattern, &match)) {
+                return match[1]
+            }
+        }
+    }
+
+    return defaultValue
+}
+
 ; Function to read configuration from INI
 ReadConfig() {
     global iniFile
@@ -78,12 +120,22 @@ ReadConfig() {
         }
     }
 
-    ; Read settings from INI
+    ; Read settings from INI with UTF-8 encoding support
     try {
-        rawPath := IniRead(iniFile, "Settings", "FolderPath", "%OneDrive%\Links")
-        darkModeRaw := IniRead(iniFile, "Settings", "DarkMode", "false")
-        iconIndex := IniRead(iniFile, "Advanced", "IconIndex", "4")
-        maxLevels := IniRead(iniFile, "Advanced", "MaxLevels", "3")
+        ; Use FileRead with UTF-8 encoding to handle Unicode characters
+        iniContent := ""
+        try {
+            iniContent := FileRead(iniFile, "UTF-8")
+        } catch {
+            ; Fallback to default encoding
+            iniContent := FileRead(iniFile)
+        }
+
+        ; Parse INI content manually to handle Unicode properly
+        rawPath := ParseIniValue(iniContent, "Settings", "FolderPath", "%OneDrive%\Links")
+        darkModeRaw := ParseIniValue(iniContent, "Settings", "DarkMode", "false")
+        iconIndex := ParseIniValue(iniContent, "Advanced", "IconIndex", "4")
+        maxLevels := ParseIniValue(iniContent, "Advanced", "MaxLevels", "3")
 
         ; Expand environment variables in the path
         expandedPath := ExpandPath(rawPath)
@@ -147,12 +199,11 @@ A_IconTip := "Folder Links - Click for menu`nPath: " . folderPath . "`nMode: " .
 
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
-A_TrayMenu.Add("TrayLinks", (*) => {})  ; Script name (non-clickable)
-A_TrayMenu.Add("v2.0.0", (*) => {})     ; Version (non-clickable)
+A_TrayMenu.Add("TrayLinks", OpenGitHub)  ; Script name - opens GitHub
+A_TrayMenu.Add("v" . getVersionFromScript(), OpenGitHub)     ; Version - opens GitHub
 A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Open Links Folder", OpenRootFolder)
 A_TrayMenu.Add("Edit Configuration", EditConfig)
-A_TrayMenu.Add("Reload Script", ReloadScript)
 A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Exit", ExitScript)
 A_TrayMenu.Default := "TrayLinks"
@@ -272,6 +323,34 @@ GetFileIcon(extension) {
     return "📄"
 }
 
+; Function to get version from script JSDoc header
+getVersionFromScript() {
+    try {
+        ; Read the script file to extract version from header comment
+        scriptContent := FileRead(A_ScriptFullPath)
+
+        ; Look for JSDoc @version format first
+        if (RegExMatch(scriptContent, "im)@version\s+([\d\.]+)", &match)) {
+            return match[1]
+        }
+
+        ; Fallback if version not found in expected format
+        return "no version"
+    } catch {
+        ; Fallback version if file reading fails
+        return "version error"
+    }
+}
+
+; Function to open GitHub repository
+OpenGitHub(*) {
+    try {
+        Run("https://github.com/mikromcz/TrayLinks")
+    } catch as e {
+        MsgBox("Error opening GitHub: " . e.Message, "Error", "Icon!")
+    }
+}
+
 ; Function to edit configuration
 EditConfig(*) {
     global iniFile
@@ -314,13 +393,13 @@ CalculateMenuHeight(listViewHeight, itemCount := 0) {
     titleHeight := 40
 
     ; Consistent bottom padding for all item counts
-    bottomPadding := 8
+    bottomPadding := 12
 
     ; Total window height = title area + ListView height + bottom padding
     height := titleHeight + listViewHeight + bottomPadding
 
-    ; No minimum height constraint - let it size naturally
-    return Min(640, height)
+    ; Max height constraint - 1000px to fit more items while allowing scrolling
+    return Min(1000, height)
 }
 
 ; Function to handle opening the root folder
@@ -511,23 +590,28 @@ ShowFolderContents(folderToShow, level := 1) {
     if (numItems < 1)
         numItems := 1
 
-    ; Create ListView with Windows 11 styling - two columns for padding control
-    listView := menuGui.Add("ListView", "x12 y36 w176 r" numItems " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
+    ; Calculate max rows that fit in 1000px window (approximately 40 rows)
+    maxRows := 40
+    displayRows := Min(numItems, maxRows)
+    needsScrollbar := numItems > maxRows
 
-    ; Force no scrollbars using multiple methods
-    DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", 0x1033, "Ptr", 0x8, "Ptr", 0)  ; LVM_SETEXTENDEDLISTVIEWSTYLE with LVS_EX_NOHSCROLL
+    ; For small folders, use exact height; for large folders, use fixed height with scrolling
+    if (needsScrollbar) {
+        ; Large folders: fixed height of 800px with vertical scrollbar enabled
+        listViewHeight := 800
+        listViewOptions := "x12 y36 w176 h" listViewHeight " -Multi -Hdr Background" colors.backgroundCard " c" colors.text
+    } else {
+        ; Small folders: exact height to fit all items, no scrollbars
+        listViewHeight := displayRows * 20
+        listViewOptions := "x12 y36 w176 h" listViewHeight " -Multi -Hdr Background" colors.backgroundCard " c" colors.text
+    }
 
-    ; Disable both horizontal and vertical scrollbar styles
-    WinSetStyle(-0x20000, listView.Hwnd)   ; Remove LVS_HSCROLL style
-    WinSetStyle(-0x200000, listView.Hwnd)  ; Remove WS_VSCROLL style
+    ; Create ListView with row count instead of explicit height
+    listView := menuGui.Add("ListView", "x12 y36 w176 r" displayRows " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
 
-    ; Additional scrollbar removal via ShowScrollBar API
-    DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; Hide horizontal scrollbar
-    DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 1, "Int", 0)  ; Hide vertical scrollbar
-
-    ; Set column widths: first column 0px (invisible), second column smaller to prevent horizontal scroll
+    ; Set column widths first: first column 0px (invisible), second column full width for proper selection
     listView.ModifyCol(1, 0)      ; First column width = 0 (hidden)
-    listView.ModifyCol(2, 160)    ; Second column slightly smaller to prevent scrollbars
+    listView.ModifyCol(2, 172)    ; Second column matches ListView width for full-width selection
 
     ; Add event handlers for click and double-click
     listView.OnEvent("Click", ItemClick.Bind(level))
@@ -556,11 +640,11 @@ ShowFolderContents(folderToShow, level := 1) {
     ; Store items data with the ListView
     listView.itemData := listItems
 
-    ; Get the actual ListView height after items are added
-    WinGetPos(, , , &actualListViewHeight, "ahk_id " listView.Hwnd)
+    ; Remove scrollbar hiding from here - move to after window is shown
 
-    ; Calculate menu height using actual ListView height for consistent bottom padding
-    menuHeight := CalculateMenuHeight(actualListViewHeight, numItems)
+    ; Calculate equivalent height for window sizing
+    listViewHeight := displayRows * 20
+    menuHeight := CalculateMenuHeight(listViewHeight, displayRows)
 
     ; Position window based on level
     winWidth := 200  ; Fixed width at 200px
@@ -575,7 +659,7 @@ ShowFolderContents(folderToShow, level := 1) {
         winY := mouseY - 40   ; Position a bit above the cursor
     } else {
         ; Subsequent levels position to the left of the previous level
-        prevGui := currentGuis[level - 1]
+        prevGui := currentGuis.Has(level - 1) ? currentGuis[level - 1] : ""
 
         if (IsObject(prevGui)) {
             WinGetPos(&prevX, &prevY, &prevW, &prevH, "ahk_id " prevGui.Hwnd)
@@ -608,6 +692,15 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Apply Windows 11 styling (drop shadow and rounded corners)
     ApplyWindows11Styling(menuGui.Hwnd)
+
+    ; NOW hide horizontal scrollbar after window is fully shown and rendered
+    if (needsScrollbar) {
+        ; Small delay to ensure ListView is fully rendered
+        Sleep(20)
+        ; Large folders: hide only horizontal scrollbar, keep vertical
+        DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", 0x1033, "Ptr", 0x8, "Ptr", 0)  ; LVM_SETEXTENDEDLISTVIEWSTYLE with LVS_EX_NOHSCROLL
+        DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; Hide horizontal scrollbar
+    }
 
     ; Store the GUI for this level
     currentGuis[level] := menuGui
