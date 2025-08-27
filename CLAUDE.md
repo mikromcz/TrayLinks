@@ -23,11 +23,14 @@ The script follows a functional architecture with these key components:
    - Windows DWM API integration for rounded corners and drop shadows
    - Dynamic height calculation with consistent 8px bottom padding
 
-3. **Event Handling** (`TrayLinks.ahk:261-317`, `TrayLinks.ahk:476-581`)
-   - Single-click navigation for folders
+3. **Event Handling** (`TrayLinks.ahk:469-506`, `TrayLinks.ahk:508-567`)
+   - Single-click navigation for folders with consistent submenu closing
    - Double-click to open files/shortcuts
+   - Right-click context menu with file operations (Open Location, Copy Path, Properties)
    - Global mouse hook for click-outside-to-close functionality
    - Tray icon click detection for menu toggle
+   - Smart tooltip system for long filenames (>24 chars) with improved positioning
+   - Fixed submenu closing behavior to ensure all child menus close properly
 
 4. **Menu Management** (`TrayLinks.ahk:231-259`)
    - Multi-level menu state tracking using Maps
@@ -101,6 +104,8 @@ TrayLinks/
 - File extensions are hidden in display for cleaner appearance
 - Hidden files and desktop.ini are automatically filtered out
 - Two-column ListView provides precise left padding control
+- Tooltips display full filenames for items longer than 24 characters
+- Right-click context menu provides file operations (Open Location, Copy Path, Properties)
 
 ## Error Handling Patterns
 

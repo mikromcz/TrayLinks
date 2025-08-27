@@ -20,6 +20,8 @@ A modern system tray utility that provides quick access to folders and files thr
 - **Cascading Menus**: Navigate through subfolders with up to 5 levels deep
 - **Smart Positioning**: Menus appear to the left of each other, preventing screen overflow
 - **Quick Actions**: Single-click to navigate, double-click to open files
+- **Right-Click Context Menu**: Open location, copy path, and properties for any file or folder
+- **Smart Tooltips**: Hover tooltips for long filenames (>24 characters) with proper positioning
 - **Configurable Paths**: Full support for environment variables, network paths, and Unicode characters
 - **Auto-Configuration**: Creates INI file automatically with sensible defaults
 - **Large Folder Support**: Handles folders with hundreds of items with automatic scrolling
@@ -105,6 +107,8 @@ FolderPath=\\server\shared\tools
 - **Right-click tray icon**: Show context menu with options
 - **Single-click item**: Navigate into folders
 - **Double-click item**: Open files/shortcuts
+- **Right-click item**: Show context menu (Open Location, Copy Path, Properties)
+- **Hover over long names**: Display tooltip with full filename
 - **Click outside menus**: Close all menus
 
 ### Keyboard Shortcuts:
@@ -222,9 +226,14 @@ This project is open source and available under the MIT License.
 
 ## 🐛 Known Issues
 
-- Very long file names might be truncated in the display
 - Network paths may have slower response times
 - Horizontal scrollbar may briefly flash when opening large folders (automatically hidden)
+
+## ✅ Recent Fixes
+
+- **Fixed submenu closing**: Resolved issue where child menus wouldn't close properly in some cases
+- **Long filename handling**: Added tooltips for filenames longer than 24 characters
+- **Enhanced context menu**: Added right-click functionality with Open Location, Copy Path, and Properties options
 
 ## 💡 Feature Ideas
 
