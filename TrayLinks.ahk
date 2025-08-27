@@ -1,8 +1,8 @@
 ﻿/**
  * @description AutoHotkey2 Folder Toolbar Script
- * Creates a system tray icon with folder menus that open on the left side
+ * Creates a system tray icon with folder menus similar to Windows "pin folder to taskbar" feature removed in Windows 11.
  * @author mikrom, ClaudeAI
- * @version 3.1.0
+ * @version 3.2.0
  */
 
 #Requires AutoHotkey v2.0
@@ -416,6 +416,9 @@ OpenRootFolder(*) {
 CloseAllMenus() {
     global currentGuis, isMenuVisible
 
+    ; Stop tooltip monitoring and clear any existing tooltips
+    StopTooltipMonitoring()
+
     for level, gui in currentGuis {
         if (IsObject(gui)) {
             gui.Destroy()
@@ -539,6 +542,33 @@ ItemContextMenu(level, ctrl, item, isRightClick, *) {
     ShowItemContextMenu(itemData, ctrl)
 }
 
+; Handle ListView item hover - Show tooltip with full item name
+ItemHover(level, ctrl, item, *) {
+    ; Clear any existing tooltip first
+    ToolTip()
+
+    ; Get the item index (1-based)
+    itemIndex := item
+
+    ; Validate item index
+    if (itemIndex <= 0 || itemIndex > ctrl.itemData.Length)
+        return
+
+    ; Get the item data
+    itemData := ctrl.itemData[itemIndex].data
+
+    ; Show tooltip with full filename (including extension for files)
+    if (itemData.type = "folder") {
+        ToolTip("🗂️ " . itemData.name)
+    } else {
+        ; For files, show the full name with extension
+        ToolTip(GetFileIcon(StrSplit(itemData.name, ".").Pop()) . " " . itemData.name)
+    }
+
+    ; Set timer to hide tooltip after 3 seconds
+    SetTimer(() => ToolTip(), -3000)
+}
+
 ; Show context menu for an item
 ShowItemContextMenu(itemData, listViewCtrl) {
     ; Get current color scheme
@@ -611,6 +641,120 @@ ShowItemProperties(itemData) {
         }
     }
 }
+
+; Simple tooltip tracking variables
+global tooltipActive := false
+global lastTooltipItem := ""
+
+; Start tooltip monitoring when menus are visible
+StartTooltipMonitoring() {
+    global tooltipActive
+    if (!tooltipActive) {
+        tooltipActive := true
+        SetTimer(CheckForTooltips, 100)  ; Check every 100ms
+    }
+}
+
+; Stop tooltip monitoring when menus close
+StopTooltipMonitoring() {
+    global tooltipActive
+    tooltipActive := false
+    SetTimer(CheckForTooltips, 0)
+    ToolTip()  ; Clear any existing tooltip
+}
+
+; Check if mouse is hovering over any ListView item and show tooltip
+CheckForTooltips() {
+    global currentGuis, lastTooltipItem
+
+    if (!isMenuVisible) {
+        StopTooltipMonitoring()
+        return
+    }
+
+    ; Get mouse position and window under cursor
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY, &winHwnd)
+
+    ; Check each active menu GUI
+    for level, gui in currentGuis {
+        if (IsObject(gui)) {
+            try {
+                ; Check if mouse is over this GUI
+                WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " gui.Hwnd)
+
+                if (mouseX >= winX && mouseX <= winX + winW &&
+                    mouseY >= winY && mouseY <= winY + winH) {
+
+                    ; Mouse is over this menu - find the ListView control
+                    for ctrlHwnd, ctrlObj in gui {
+                        if (ctrlObj.Type = "ListView") {
+                            ; Get ListView position relative to GUI
+                            ctrlObj.GetPos(&lvX, &lvY, &lvW, &lvH)
+
+                            ; Convert to screen coordinates
+                            lvScreenX := winX + lvX
+                            lvScreenY := winY + lvY
+
+                            ; Check if mouse is over the ListView
+                            if (mouseX >= lvScreenX && mouseX <= lvScreenX + lvW &&
+                                mouseY >= lvScreenY && mouseY <= lvScreenY + lvH) {
+
+                                ; Calculate relative position within ListView
+                                relX := mouseX - lvScreenX
+                                relY := mouseY - lvScreenY
+
+                                ; Determine which row (approximate - each row is ~20px)
+                                rowIndex := Floor(relY / 20) + 1
+
+                                ; Check if we have data for this row
+                                if (rowIndex > 0 && rowIndex <= ctrlObj.itemData.Length) {
+                                    itemData := ctrlObj.itemData[rowIndex].data
+
+                                    ; For files, remove extension to match ListView display; folders keep full name
+                                    if (itemData.type = "folder") {
+                                        tooltipText := itemData.name
+                                    } else {
+                                        ; Remove extension from filename to match what's shown in ListView
+                                        SplitPath(itemData.name, , , , &nameNoExt)
+                                        tooltipText := nameNoExt
+                                    }
+
+                                    ; Only show tooltip if the name is longer than 24 characters
+                                    if (StrLen(tooltipText) > 24) {
+                                        ; Only update tooltip if it's different from last one
+                                        if (tooltipText != lastTooltipItem) {
+                                            ; Set coordinate mode for ToolTip to screen coordinates
+                                            CoordMode("ToolTip", "Screen")
+                                            ToolTip(tooltipText, mouseX + 15, mouseY + 15)
+                                            lastTooltipItem := tooltipText
+                                        }
+                                    } else {
+                                        ; Clear tooltip for short names
+                                        if (lastTooltipItem != "") {
+                                            ToolTip()
+                                            lastTooltipItem := ""
+                                        }
+                                    }
+                                    return
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {
+                ; Ignore errors with destroyed windows - just skip this GUI
+            }
+        }
+    }
+
+    ; Mouse not over any ListView item - clear tooltip
+    if (lastTooltipItem != "") {
+        ToolTip()
+        lastTooltipItem := ""
+    }
+}
+
 
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
@@ -729,6 +873,7 @@ ShowFolderContents(folderToShow, level := 1) {
         listItems.Push({ row: row, data: file })
     }
 
+
     ; Store items data with the ListView
     listView.itemData := listItems
 
@@ -797,8 +942,9 @@ ShowFolderContents(folderToShow, level := 1) {
     ; Store the GUI for this level
     currentGuis[level] := menuGui
 
-    ; Set menu as visible
+    ; Set menu as visible and start tooltip monitoring
     isMenuVisible := true
+    StartTooltipMonitoring()
 }
 
 ; Handle global mouse clicks to close menus when clicking outside
