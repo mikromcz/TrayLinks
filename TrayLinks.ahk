@@ -499,7 +499,10 @@ ItemClick(level, ctrl, *) {
             ShowFolderContents(item.path, level + 1)
         }
     }
-    ; For non-folders, just select (do nothing else)
+    ; For non-folders, close any deeper level menus to maintain consistent behavior
+    else {
+        CloseMenusAtLevel(level + 1)
+    }
 }
 
 ; Handle ListView item double-click - Open files/shortcuts
