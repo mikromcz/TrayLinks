@@ -521,6 +521,97 @@ ItemDoubleClick(level, ctrl, *) {
     }
 }
 
+; Handle ListView context menu (right-click)
+ItemContextMenu(level, ctrl, item, isRightClick, *) {
+    ; Only show context menu on right-click
+    if (!isRightClick)
+        return
+
+    ; Get selected row
+    rowNum := ctrl.GetNext(0)
+    if (rowNum = 0 || rowNum > ctrl.itemData.Length)
+        return
+
+    ; Get the selected item data
+    itemData := ctrl.itemData[rowNum].data
+
+    ; Create context menu with Windows 11 styling
+    ShowItemContextMenu(itemData, ctrl)
+}
+
+; Show context menu for an item
+ShowItemContextMenu(itemData, listViewCtrl) {
+    ; Get current color scheme
+    colors := GetColors()
+
+    ; Create context menu
+    contextMenu := Menu()
+
+    ; Style the menu with Windows 11 colors
+    ; Note: AutoHotkey v2 doesn't directly support menu styling, but we can create a basic menu
+    contextMenu.Add("Open item location", (*) => OpenItemLocation(itemData))
+    contextMenu.Add("Copy path", (*) => CopyItemPath(itemData))
+    contextMenu.Add("Properties", (*) => ShowItemProperties(itemData))
+
+    ; Show the context menu at cursor position
+    ; Use no parameters to show at current cursor position
+    contextMenu.Show()
+}
+
+; Open the item's parent folder and select the item
+OpenItemLocation(itemData) {
+    try {
+        ; Get the parent folder path
+        SplitPath(itemData.path, , &parentDir)
+
+        ; Open the parent folder and select the item
+        ; Use explorer with /select parameter to highlight the item
+        Run('explorer.exe /select,"' . itemData.path . '"')
+
+        ; Close all menus after action
+        CloseAllMenus()
+    } catch as e {
+        MsgBox("Error opening item location: " . e.Message, "Error", "Icon!")
+    }
+}
+
+; Copy the item's full path to clipboard
+CopyItemPath(itemData) {
+    try {
+        ; Copy the full path to clipboard
+        A_Clipboard := itemData.path
+
+        ; Optional: Show a brief confirmation (can be removed if too intrusive)
+        ; ToolTip("Path copied to clipboard")
+        ; SetTimer(() => ToolTip(), -1000)  ; Hide after 1 second
+
+    } catch as e {
+        MsgBox("Error copying path: " . e.Message, "Error", "Icon!")
+    }
+}
+
+; Show Windows properties dialog for the item
+ShowItemProperties(itemData) {
+    try {
+        ; Use ShellExecute with "properties" verb to show Properties dialog only
+        DllCall("shell32.dll\ShellExecuteW",
+            "Ptr", 0,                    ; hwnd
+            "WStr", "properties",        ; verb
+            "WStr", itemData.path,       ; file
+            "WStr", "",                  ; parameters
+            "WStr", "",                  ; directory
+            "Int", 1)                    ; show command
+
+    } catch as e {
+        ; Fallback: try alternative method using rundll32
+        try {
+            Run('rundll32.exe shell32.dll,OpenAs_RunDLL "' . itemData.path . '"')
+        } catch as e2 {
+            MsgBox("Error showing properties: " . e.Message, "Error", "Icon!")
+        }
+    }
+}
+
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
     global currentGuis, currentPaths, isMenuVisible
@@ -613,9 +704,10 @@ ShowFolderContents(folderToShow, level := 1) {
     listView.ModifyCol(1, 0)      ; First column width = 0 (hidden)
     listView.ModifyCol(2, 172)    ; Second column matches ListView width for full-width selection
 
-    ; Add event handlers for click and double-click
+    ; Add event handlers for click, double-click, and right-click
     listView.OnEvent("Click", ItemClick.Bind(level))
     listView.OnEvent("DoubleClick", ItemDoubleClick.Bind(level))
+    listView.OnEvent("ContextMenu", ItemContextMenu.Bind(level))
 
     ; Add items to the ListView (folders first)
     listItems := []
