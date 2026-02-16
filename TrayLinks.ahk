@@ -111,12 +111,7 @@ ReadConfig() {
     if (!FileExist(iniFile)) {
         if (!CreateDefaultIni()) {
             ; If we can't create INI, use fallback
-            return {
-                folderPath: EnvGet("OneDrive") . "\Links",
-                iconIndex: 4,
-                maxLevels: 3,
-                darkMode: false
-            }
+            return DefaultConfig()
         }
     }
 
@@ -155,12 +150,7 @@ ReadConfig() {
         }
     } catch as e {
         MsgBox("Error reading INI file: " . e.Message . "`nUsing default settings.", "Warning", "Icon!")
-        return {
-            folderPath: EnvGet("OneDrive") . "\Links",
-            iconIndex: 4,
-            maxLevels: 3,
-            darkMode: false
-        }
+        return DefaultConfig()
     }
 }
 
@@ -267,60 +257,61 @@ ApplyWindows11Styling(hwnd) {
     }
 }
 
-; Get appropriate icon for file type (Windows 11 style)
-GetFileIcon(extension) {
-    extension := StrLower(extension)
-
+; File extension to icon mapping (Windows 11 style)
+global fileIconMap := Map(
     ; Document files
-    if (extension = "txt" || extension = "rtf" || extension = "doc" || extension = "docx")
-        return "📄"
-
-    ; PDF files
-    if (extension = "pdf")
-        return "📕"
-
-    ; Spreadsheet files
-    if (extension = "xls" || extension = "xlsx" || extension = "csv")
-        return "📊"
-
-    ; Presentation files
-    if (extension = "ppt" || extension = "pptx")
-        return "📋"
-
-    ; Image files
-    if (extension = "jpg" || extension = "jpeg" || extension = "png" || extension = "gif" || extension = "bmp" || extension = "ico")
-        return "🖼️"
-
-    ; Video files
-    if (extension = "mp4" || extension = "avi" || extension = "mkv" || extension = "mov" || extension = "wmv")
-        return "🎬"
-
-    ; Audio files
-    if (extension = "mp3" || extension = "wav" || extension = "flac" || extension = "m4a")
-        return "🎵"
-
-    ; Archive files
-    if (extension = "zip" || extension = "rar" || extension = "7z" || extension = "tar" || extension = "gz")
-        return "🗜️"
-
-    ; Executable files
-    if (extension = "exe" || extension = "msi" || extension = "bat" || extension = "cmd")
-        return "⚙️"
-
+    "txt", "📄", "rtf", "📄", "doc", "📄", "docx", "📄",
+    ; PDF
+    "pdf", "📕",
+    ; Spreadsheets
+    "xls", "📊", "xlsx", "📊", "csv", "📊",
+    ; Presentations
+    "ppt", "📋", "pptx", "📋",
+    ; Images
+    "jpg", "🖼️", "jpeg", "🖼️", "png", "🖼️", "gif", "🖼️", "bmp", "🖼️", "ico", "🖼️",
+    ; Video
+    "mp4", "🎬", "avi", "🎬", "mkv", "🎬", "mov", "🎬", "wmv", "🎬",
+    ; Audio
+    "mp3", "🎵", "wav", "🎵", "flac", "🎵", "m4a", "🎵",
+    ; Archives
+    "zip", "🗜️", "rar", "🗜️", "7z", "🗜️", "tar", "🗜️", "gz", "🗜️",
+    ; Executables
+    "exe", "⚙️", "msi", "⚙️", "bat", "⚙️", "cmd", "⚙️",
     ; Web files
-    if (extension = "html" || extension = "htm" || extension = "php" || extension = "css" || extension = "js")
-        return "🌐"
-
+    "html", "🌐", "htm", "🌐", "php", "🌐", "css", "🌐", "js", "🌐",
     ; Code files
-    if (extension = "py" || extension = "cpp" || extension = "c" || extension = "java" || extension = "cs" || extension = "go")
-        return "📝"
-
+    "py", "📝", "cpp", "📝", "c", "📝", "java", "📝", "cs", "📝", "go", "📝",
     ; Shortcuts and links
-    if (extension = "lnk" || extension = "url")
-        return "🔗"
+    "lnk", "🔗", "url", "🔗"
+)
 
-    ; Default for unknown files
-    return "📄"
+; Get appropriate icon for file type
+GetFileIcon(extension) {
+    global fileIconMap
+    extension := StrLower(extension)
+    return fileIconMap.Has(extension) ? fileIconMap[extension] : "📄"
+}
+
+; Check if a window belongs to the system tray area
+IsTrayWindow(winHwnd) {
+    try {
+        WinGetClass(&winClass, "ahk_id " . winHwnd)
+        return (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow" ||
+            winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32" ||
+            winClass = "#32768" || InStr(winClass, "Menu"))
+    } catch {
+        return false
+    }
+}
+
+; Default configuration fallback
+DefaultConfig() {
+    return {
+        folderPath: EnvGet("OneDrive") . "\Links",
+        iconIndex: 4,
+        maxLevels: 3,
+        darkMode: false
+    }
 }
 
 ; Function to get version from script JSDoc header
@@ -478,26 +469,13 @@ ItemClick(level, ctrl, *) {
     ; Get the selected item data
     item := ctrl.itemData[rowNum].data
 
-    ; For folders, navigate as before
+    ; For folders, close deeper menus and navigate into the folder
     if (item.type = "folder") {
-        ; Check if we're at max level
         if (level >= config.maxLevels)
             return
 
-        ; If folder in level 1, close level 2+ and open this folder
-        if (level = 1) {
-            CloseMenusAtLevel(2)  ; Close level 2 and above
-            ShowFolderContents(item.path, 2)  ; Show level 2
-        }
-        ; If folder in level 2, close level 3+ and open this folder
-        else if (level = 2) {
-            CloseMenusAtLevel(3)  ; Close level 3 and above
-            ShowFolderContents(item.path, 3)  ; Show level 3
-        }
-        ; For deeper levels, just show next level
-        else if (level < config.maxLevels) {
-            ShowFolderContents(item.path, level + 1)
-        }
+        CloseMenusAtLevel(level + 1)
+        ShowFolderContents(item.path, level + 1)
     }
     ; For non-folders, close any deeper level menus to maintain consistent behavior
     else {
@@ -759,6 +737,63 @@ CheckForTooltips() {
 }
 
 
+; Scan a folder and return sorted arrays of {folders, files}
+ScanFolder(folderToShow) {
+    folders := []
+    files := []
+
+    try {
+        loop files, folderToShow "\*", "D"
+        {
+            if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
+                continue
+            folders.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder" })
+        }
+    }
+
+    try {
+        loop files, folderToShow "\*", "F"
+        {
+            if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
+                continue
+            files.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "file" })
+        }
+    }
+
+    return { folders: folders, files: files }
+}
+
+; Calculate menu window position based on level
+CalculateMenuPosition(level, winWidth, menuHeight) {
+    global currentGuis
+
+    if (level = 1) {
+        CoordMode("Mouse", "Screen")
+        MouseGetPos(&mouseX, &mouseY)
+        winX := mouseX - 100
+        winY := mouseY - 40
+    } else {
+        prevGui := currentGuis.Has(level - 1) ? currentGuis[level - 1] : ""
+
+        if (IsObject(prevGui)) {
+            WinGetPos(&prevX, &prevY, &prevW, &prevH, "ahk_id " prevGui.Hwnd)
+            winX := prevX - winWidth - 5
+            winY := prevY
+        } else {
+            CoordMode("Mouse", "Screen")
+            MouseGetPos(&mouseX, &mouseY)
+            winX := mouseX - (level * (winWidth + 5))
+            winY := mouseY - 40
+        }
+    }
+
+    ; Clamp to screen bounds
+    winX := Max(10, Min(winX, A_ScreenWidth - winWidth - 20))
+    winY := Max(10, Min(winY, A_ScreenHeight - menuHeight - 20))
+
+    return { x: winX, y: winY }
+}
+
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
     global currentGuis, currentPaths, isMenuVisible
@@ -787,39 +822,10 @@ ShowFolderContents(folderToShow, level := 1) {
     titleText := menuGui.Add("Text", "x16 y12 w172 c" colors.text, folderName)
     titleText.SetFont("s10 w600")  ; Semi-bold for title
 
-    ; Data structures
-    folders := []
-    files := []
-
-    ; Scan for directories first
-    try {
-        loop files, folderToShow "\*", "D"  ; Only directories
-        {
-            ; Skip desktop.ini and hidden directories
-            if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
-                continue
-
-            ; Add to folders array
-            folders.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder" })
-        }
-    } catch as e {
-        ; Handle error silently
-    }
-
-    ; Then scan for files
-    try {
-        loop files, folderToShow "\*", "F"  ; Only files
-        {
-            ; Skip desktop.ini and hidden files
-            if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
-                continue
-
-            ; Add to files array
-            files.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "file" })
-        }
-    } catch as e {
-        ; Handle error silently
-    }
+    ; Scan folder contents
+    scanned := ScanFolder(folderToShow)
+    folders := scanned.folders
+    files := scanned.files
 
     ; Calculate the number of items for listview sizing
     numItems := folders.Length + files.Length
@@ -833,18 +839,7 @@ ShowFolderContents(folderToShow, level := 1) {
     displayRows := Min(numItems, maxRows)
     needsScrollbar := numItems > maxRows
 
-    ; For small folders, use exact height; for large folders, use fixed height with scrolling
-    if (needsScrollbar) {
-        ; Large folders: fixed height of 800px with vertical scrollbar enabled
-        listViewHeight := 800
-        listViewOptions := "x12 y36 w176 h" listViewHeight " -Multi -Hdr Background" colors.backgroundCard " c" colors.text
-    } else {
-        ; Small folders: exact height to fit all items, no scrollbars
-        listViewHeight := displayRows * 20
-        listViewOptions := "x12 y36 w176 h" listViewHeight " -Multi -Hdr Background" colors.backgroundCard " c" colors.text
-    }
-
-    ; Create ListView with row count instead of explicit height
+    ; Create ListView with row count
     listView := menuGui.Add("ListView", "x12 y36 w176 r" displayRows " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
 
     ; Set column widths first: first column 0px (invisible), second column full width for proper selection
@@ -876,59 +871,19 @@ ShowFolderContents(folderToShow, level := 1) {
         listItems.Push({ row: row, data: file })
     }
 
-
     ; Store items data with the ListView
     listView.itemData := listItems
-
-    ; Remove scrollbar hiding from here - move to after window is shown
 
     ; Calculate equivalent height for window sizing
     listViewHeight := displayRows * 20
     menuHeight := CalculateMenuHeight(listViewHeight, displayRows)
 
     ; Position window based on level
-    winWidth := 200  ; Fixed width at 200px
-    winX := 0
-
-    ; Position menus from left to right based on level
-    if (level = 1) {
-        ; First level menu appears at mouse position
-        CoordMode("Mouse", "Screen")
-        MouseGetPos(&mouseX, &mouseY)
-        winX := mouseX - 100  ; Center around mouse X
-        winY := mouseY - 40   ; Position a bit above the cursor
-    } else {
-        ; Subsequent levels position to the left of the previous level
-        prevGui := currentGuis.Has(level - 1) ? currentGuis[level - 1] : ""
-
-        if (IsObject(prevGui)) {
-            WinGetPos(&prevX, &prevY, &prevW, &prevH, "ahk_id " prevGui.Hwnd)
-            winX := prevX - winWidth - 5
-            winY := prevY  ; Same Y position as previous menu
-        } else {
-            ; Fallback position if previous GUI not found
-            CoordMode("Mouse", "Screen")
-            MouseGetPos(&mouseX, &mouseY)
-            winX := mouseX - (level * (winWidth + 5))
-            winY := mouseY - 40
-        }
-    }
-
-    ; Make sure we don't go off screen
-    if (winY + menuHeight > A_ScreenHeight)
-        winY := A_ScreenHeight - menuHeight - 20
-
-    if (winX + winWidth > A_ScreenWidth)
-        winX := A_ScreenWidth - winWidth - 20
-
-    if (winY < 10)
-        winY := 10
-
-    if (winX < 10)
-        winX := 10
+    winWidth := 200
+    pos := CalculateMenuPosition(level, winWidth, menuHeight)
 
     ; Show the GUI with the dynamic height
-    menuGui.Show("x" winX " y" winY " w" winWidth " h" menuHeight " NoActivate")
+    menuGui.Show("x" pos.x " y" pos.y " w" winWidth " h" menuHeight " NoActivate")
 
     ; Apply Windows 11 styling (drop shadow and rounded corners)
     ApplyWindows11Styling(menuGui.Hwnd)
@@ -974,16 +929,8 @@ OnGlobalMouseClick(wParam, lParam, msg, hwnd) {
     }
 
     ; Also check if clicked on tray (to prevent closing when clicking tray icon)
-    try {
-        WinGetClass(&winClass, "ahk_id " . winUnderMouse)
-        if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow" ||
-            winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32" ||
-            winClass = "#32768" || InStr(winClass, "Menu")) {
-            clickedOnMenu := true
-        }
-    } catch {
-        ; Ignore errors
-    }
+    if (!clickedOnMenu && IsTrayWindow(winUnderMouse))
+        clickedOnMenu := true
 
     ; If clicked outside menus and not on tray, close all
     if (!clickedOnMenu) {
@@ -1027,18 +974,8 @@ LowLevelMouseProc(nCode, wParam, lParam) {
         }
 
         ; Check if clicked on tray area or tray menu
-        if (!clickedOnMenu) {
-            try {
-                WinGetClass(&winClass, "ahk_id " . winUnderMouse)
-                if (winClass = "Shell_TrayWnd" || winClass = "NotifyIconOverflowWindow" ||
-                    winClass = "TrayNotifyWnd" || winClass = "SysPager" || winClass = "ToolbarWindow32" ||
-                    winClass = "#32768" || InStr(winClass, "Menu")) {
-                    clickedOnMenu := true
-                }
-            } catch {
-                ; Ignore errors
-            }
-        }
+        if (!clickedOnMenu && IsTrayWindow(winUnderMouse))
+            clickedOnMenu := true
 
         ; If clicked outside menus, close them
         if (!clickedOnMenu) {
@@ -1091,16 +1028,5 @@ TrayIconClick(wParam, lParam, *) {
         ShowFolderContents(folderPath, 1)
     }
 }
-
-/* Esc:: ; Esc to close all
-{
-    global isMenuVisible
-
-    if (isMenuVisible) {
-        CloseAllMenus()
-    }
-
-}
- */
 
 ; End of script
