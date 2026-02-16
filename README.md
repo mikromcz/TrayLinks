@@ -29,8 +29,7 @@ A modern system tray utility that provides quick access to folders and files thr
 
 ### ⌨️ User Experience
 - **Keyboard Shortcuts**: Win+F to toggle menu
-- **Click Outside to Close**: Intuitive menu dismissal
-- **Smooth Interactions**: Responsive design with proper hover states
+- **Click Outside to Close**: Intuitive menu dismissal via low-level mouse hook
 - **Clean Exit**: Reliable script reloading and exit functionality
 
 ## 🚀 Quick Start
@@ -117,7 +116,7 @@ FolderPath=\\server\shared\tools
 
 ### Context Menu Options:
 - **TrayLinks**: Click to open GitHub repository
-- **Version (e.g., v3.1.0)**: Click to open GitHub repository  
+- **Version (e.g., v3.3.0)**: Click to open GitHub repository
 - **Open Links Folder**: Opens root folder in Windows Explorer
 - **Edit Configuration**: Opens INI file for editing
 - **Exit**: Closes the application
@@ -229,8 +228,16 @@ This project is open source and available under the MIT License.
 - Network paths may have slower response times
 - Horizontal scrollbar may briefly flash when opening large folders (automatically hidden)
 
-## ✅ Recent Fixes
+## ✅ Recent Changes
 
+### v3.3.0 - Code Refactoring
+- **Refactored file icon system**: Replaced if-chain with Map-based lookup for cleaner extension-to-icon mapping
+- **Extracted helper functions**: `ScanFolder()`, `CalculateMenuPosition()`, `IsTrayWindow()`, `DefaultConfig()` for better modularity
+- **Removed dead code**: Cleaned up unused variables, parameters, and unreachable functions
+- **Simplified menu navigation**: Unified folder/file click handling logic
+- **Improved race condition handling**: Added try-catch guards around GUI handle access in mouse hooks
+
+### v3.2.0
 - **Fixed submenu closing**: Resolved issue where child menus wouldn't close properly in some cases
 - **Long filename handling**: Added tooltips for filenames longer than 24 characters
 - **Enhanced context menu**: Added right-click functionality with Open Location, Copy Path, and Properties options
