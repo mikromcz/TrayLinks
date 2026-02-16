@@ -2,16 +2,14 @@
  * @description AutoHotkey2 Folder Toolbar Script
  * Creates a system tray icon with folder menus similar to Windows "pin folder to taskbar" feature removed in Windows 11.
  * @author mikrom, ClaudeAI
- * @version 3.2.0
+ * @version 3.3.0
  */
 
 #Requires AutoHotkey v2.0
 
 ; Configuration - INI file handling
-scriptDir := A_ScriptDir
-scriptName := A_ScriptName
-SplitPath(scriptName, , , , &nameNoExt)
-iniFile := scriptDir . "\" . nameNoExt . ".ini"
+SplitPath(A_ScriptName, , , , &nameNoExt)
+iniFile := A_ScriptDir . "\" . nameNoExt . ".ini"
 
 ; Function to expand environment variables in a path
 ExpandPath(path) {
@@ -200,7 +198,6 @@ A_TrayMenu.Default := "TrayLinks"
 
 ; Global variables
 global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
-global currentPaths := Map()     ; Store paths by level
 global isMenuVisible := false
 
 ; Windows 11 Fluent Design color schemes
@@ -379,7 +376,7 @@ ExitScript(*) {
 }
 
 ; Calculate dynamic height for a menu window with consistent padding
-CalculateMenuHeight(listViewHeight, itemCount := 0) {
+CalculateMenuHeight(listViewHeight) {
     ; Title area height with Windows 11 spacing (title + padding, no separator)
     titleHeight := 40
 
@@ -417,44 +414,21 @@ CloseAllMenus() {
     }
 
     currentGuis := Map()
-    currentPaths := Map()
     isMenuVisible := false
 }
 
 ; Close menus at and above specified level
 CloseMenusAtLevel(level) {
-    global currentGuis, currentPaths, config
+    global currentGuis, config
 
-    ; Check from max level down to the specified level
-    for l in Range(config.maxLevels, level, -1) {
+    l := config.maxLevels
+    while (l >= level) {
         if (currentGuis.Has(l) && IsObject(currentGuis[l])) {
             currentGuis[l].Destroy()
             currentGuis.Delete(l)
-            if (currentPaths.Has(l))
-                currentPaths.Delete(l)
         }
+        l--
     }
-}
-
-; Helper function to create a range with step
-Range(start, end, step := 1) {
-    result := []
-    if (step > 0) {
-        loop {
-            if (start > end)
-                break
-            result.Push(start)
-            start += step
-        }
-    } else {
-        loop {
-            if (start < end)
-                break
-            result.Push(start)
-            start += step
-        }
-    }
-    return result
 }
 
 ; Handle ListView item click - Just select the item
@@ -469,17 +443,15 @@ ItemClick(level, ctrl, *) {
     ; Get the selected item data
     item := ctrl.itemData[rowNum].data
 
-    ; For folders, close deeper menus and navigate into the folder
+    ; Close deeper level menus regardless of item type
+    CloseMenusAtLevel(level + 1)
+
+    ; For folders, navigate into the folder
     if (item.type = "folder") {
         if (level >= config.maxLevels)
             return
 
-        CloseMenusAtLevel(level + 1)
         ShowFolderContents(item.path, level + 1)
-    }
-    ; For non-folders, close any deeper level menus to maintain consistent behavior
-    else {
-        CloseMenusAtLevel(level + 1)
     }
 }
 
@@ -523,43 +495,9 @@ ItemContextMenu(level, ctrl, item, isRightClick, *) {
     ShowItemContextMenu(itemData, ctrl)
 }
 
-; Handle ListView item hover - Show tooltip with full item name
-ItemHover(level, ctrl, item, *) {
-    ; Clear any existing tooltip first
-    ToolTip()
-
-    ; Get the item index (1-based)
-    itemIndex := item
-
-    ; Validate item index
-    if (itemIndex <= 0 || itemIndex > ctrl.itemData.Length)
-        return
-
-    ; Get the item data
-    itemData := ctrl.itemData[itemIndex].data
-
-    ; Show tooltip with full filename (including extension for files)
-    if (itemData.type = "folder") {
-        ToolTip("🗂️ " . itemData.name)
-    } else {
-        ; For files, show the full name with extension
-        ToolTip(GetFileIcon(StrSplit(itemData.name, ".").Pop()) . " " . itemData.name)
-    }
-
-    ; Set timer to hide tooltip after 3 seconds
-    SetTimer(() => ToolTip(), -3000)
-}
-
 ; Show context menu for an item
 ShowItemContextMenu(itemData, listViewCtrl) {
-    ; Get current color scheme
-    colors := GetColors()
-
-    ; Create context menu
     contextMenu := Menu()
-
-    ; Style the menu with Windows 11 colors
-    ; Note: AutoHotkey v2 doesn't directly support menu styling, but we can create a basic menu
     contextMenu.Add("Open item location", (*) => OpenItemLocation(itemData))
     contextMenu.Add("Copy path", (*) => CopyItemPath(itemData))
     contextMenu.Add("Properties", (*) => ShowItemProperties(itemData))
@@ -572,11 +510,6 @@ ShowItemContextMenu(itemData, listViewCtrl) {
 ; Open the item's parent folder and select the item
 OpenItemLocation(itemData) {
     try {
-        ; Get the parent folder path
-        SplitPath(itemData.path, , &parentDir)
-
-        ; Open the parent folder and select the item
-        ; Use explorer with /select parameter to highlight the item
         Run('explorer.exe /select,"' . itemData.path . '"')
 
         ; Close all menus after action
@@ -589,13 +522,7 @@ OpenItemLocation(itemData) {
 ; Copy the item's full path to clipboard
 CopyItemPath(itemData) {
     try {
-        ; Copy the full path to clipboard
         A_Clipboard := itemData.path
-
-        ; Optional: Show a brief confirmation (can be removed if too intrusive)
-        ; ToolTip("Path copied to clipboard")
-        ; SetTimer(() => ToolTip(), -1000)  ; Hide after 1 second
-
     } catch as e {
         MsgBox("Error copying path: " . e.Message, "Error", "Icon!")
     }
@@ -796,16 +723,13 @@ CalculateMenuPosition(level, winWidth, menuHeight) {
 
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
-    global currentGuis, currentPaths, isMenuVisible
+    global currentGuis, isMenuVisible
 
     ; Get current color scheme
     colors := GetColors()
 
     ; Close menus at and above this level
     CloseMenusAtLevel(level)
-
-    ; Remember the path for this level
-    currentPaths[level] := folderToShow
 
     ; Create new GUI with Windows 11 styling
     menuGui := Gui("-Caption +ToolWindow +AlwaysOnTop")
@@ -876,7 +800,7 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Calculate equivalent height for window sizing
     listViewHeight := displayRows * 20
-    menuHeight := CalculateMenuHeight(listViewHeight, displayRows)
+    menuHeight := CalculateMenuHeight(listViewHeight)
 
     ; Position window based on level
     winWidth := 200
@@ -922,9 +846,11 @@ OnGlobalMouseClick(wParam, lParam, msg, hwnd) {
 
     ; Check each menu GUI
     for level, gui in currentGuis {
-        if (IsObject(gui) && (winUnderMouse = gui.Hwnd || hwnd = gui.Hwnd)) {
-            clickedOnMenu := true
-            break
+        try {
+            if (IsObject(gui) && (winUnderMouse = gui.Hwnd || hwnd = gui.Hwnd)) {
+                clickedOnMenu := true
+                break
+            }
         }
     }
 
@@ -955,20 +881,19 @@ LowLevelMouseProc(nCode, wParam, lParam) {
         clickedOnMenu := false
 
         for level, gui in currentGuis {
-            if (IsObject(gui) && winUnderMouse = gui.Hwnd) {
-                clickedOnMenu := true
-                break
-            }
+            if (!IsObject(gui))
+                continue
 
-            ; Also check child windows (ListView controls)
-            if (IsObject(gui)) {
-                try {
-                    if (DllCall("IsChild", "Ptr", gui.Hwnd, "Ptr", winUnderMouse)) {
-                        clickedOnMenu := true
-                        break
-                    }
-                } catch {
-                    ; Ignore errors
+            try {
+                if (winUnderMouse = gui.Hwnd) {
+                    clickedOnMenu := true
+                    break
+                }
+
+                ; Also check child windows (ListView controls)
+                if (DllCall("IsChild", "Ptr", gui.Hwnd, "Ptr", winUnderMouse)) {
+                    clickedOnMenu := true
+                    break
                 }
             }
         }
