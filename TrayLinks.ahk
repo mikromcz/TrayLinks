@@ -51,8 +51,8 @@ FolderPath=%OneDrive%\Links
 DarkMode=true
 
 [Advanced]
-; Icon index from Shell32.dll (optional)
-IconIndex=4
+; Icon index from imageres.dll (optional)
+IconIndex=205
 
 ; Maximum menu levels (1-5)
 MaxLevels=3
@@ -183,27 +183,30 @@ if (!DirExist(folderPath)) {
     ExitApp
 }
 
+; Every icon in the app - tray and both menus - comes out of this one file.
+; Numbers are 1-based icon positions within it, the same numbering the INI's
+; IconIndex uses, so swapping the file swaps all of them together.
+global ICON_FILE := "imageres.dll"
+
+; Menu item icons. Swap freely - a number that does not resolve on a given
+; Windows build just leaves that item without an icon.
+global MENU_ICON_OPEN_LOCATION := 195  ; Open item location
+global MENU_ICON_OPEN_FOLDER := 205    ; Open links folder
+global MENU_ICON_COPY_PATH := 244      ; Copy path
+global MENU_ICON_PROPERTIES := 75      ; Properties
+global MENU_ICON_VERSION := 77         ; Version / about
+global MENU_ICON_EDIT_CONFIG := 248    ; Edit configuration
+global MENU_ICON_EXIT := 94            ; Exit
+
 ; Set up the tray icon
 try {
-    TraySetIcon("Shell32.dll", config.iconIndex)
+    TraySetIcon(ICON_FILE, config.iconIndex)
 } catch {
     ; Fallback if that specific icon fails
 }
 
 ; Set tooltip for the tray icon
 A_IconTip := "TrayLinks - Click for menu`nPath: " . folderPath . "`nMode: " . (config.darkMode ? "Dark" : "Light")
-
-; Context and tray menu icons. Numbers are shell32.dll icon positions using the
-; same 1-based numbering as the IconIndex setting in the INI, so a number that
-; works for the tray icon works here too. Swap freely - a number that does not
-; resolve just leaves that item without an icon.
-global MENU_ICON_FILE := "shell32.dll"
-global MENU_ICON_OPEN_LOCATION := 5    ; Open folder
-global MENU_ICON_COPY_PATH := 135      ; Two pages / copy
-global MENU_ICON_PROPERTIES := 22      ; Properties sheet
-global MENU_ICON_VERSION := 24         ; Information
-global MENU_ICON_EDIT_CONFIG := 70     ; Text file / editor
-global MENU_ICON_EXIT := 28            ; Door / exit
 
 ; Render standard popup menus dark when the INI asks for dark mode
 if (config.darkMode)
@@ -224,7 +227,7 @@ A_TrayMenu.Default := "TrayLinks"
 ; icon the INI picked for the tray itself, so the two always match.
 SetMenuItemIcon(A_TrayMenu, "TrayLinks", config.iconIndex)
 SetMenuItemIcon(A_TrayMenu, "v" . SCRIPT_VERSION, MENU_ICON_VERSION)
-SetMenuItemIcon(A_TrayMenu, "Open Links Folder", MENU_ICON_OPEN_LOCATION)
+SetMenuItemIcon(A_TrayMenu, "Open Links Folder", MENU_ICON_OPEN_FOLDER)
 SetMenuItemIcon(A_TrayMenu, "Edit Configuration", MENU_ICON_EDIT_CONFIG)
 SetMenuItemIcon(A_TrayMenu, "Exit", MENU_ICON_EXIT)
 
@@ -350,7 +353,7 @@ IsTrayWindow(winHwnd) {
 DefaultConfig() {
     return {
         folderPath: EnvGet("OneDrive") . "\Links",
-        iconIndex: 4,
+        iconIndex: 205,
         maxLevels: 3,
         darkMode: false
     }
@@ -547,7 +550,7 @@ EnableDarkMenus() {
 ; that does not resolve on this Windows build cannot cost the others theirs.
 SetMenuItemIcon(menuObj, itemName, iconNumber) {
     try {
-        menuObj.SetIcon(itemName, MENU_ICON_FILE, iconNumber)
+        menuObj.SetIcon(itemName, ICON_FILE, iconNumber)
     }
 }
 

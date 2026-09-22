@@ -61,8 +61,8 @@ FolderPath=%OneDrive%\Links
 DarkMode=true
 
 [Advanced]
-; Icon index from Shell32.dll (optional)
-IconIndex=4
+; Icon index from imageres.dll (optional)
+IconIndex=205
 
 ; Maximum menu levels (1-5)
 MaxLevels=3
@@ -135,12 +135,18 @@ Toggle between Windows 11 dark and light themes:
 3. Save the file - the script will automatically detect changes
 
 ### Changing the Icon:
-Modify `IconIndex` in the INI file. Common Shell32.dll icons:
-- `3` - Computer/PC icon
-- `4` - Folder icon (default)
-- `5` - Floppy disk icon
-- `22` - Gear/settings icon
-- `42` - Folder with arrow icon
+Modify `IconIndex` in the INI file. The number is a 1-based icon position in
+`imageres.dll` - the same numbering the menu icons use. The icons this project
+already picks out, as a starting point:
+- `205` - Folder (default)
+- `195` - Open folder
+- `244` - Copy
+- `75` - Properties
+- `77` - Information
+- `94` - Exit
+
+To browse the rest, open the "Change Icon" dialog on any shortcut and point it
+at `imageres.dll`, or change `ICON_FILE` in the script to use a different DLL.
 
 ### Adjusting Menu Levels:
 Set `MaxLevels` to control how deep the menus can go (1-5 levels supported).
