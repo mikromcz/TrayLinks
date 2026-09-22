@@ -25,12 +25,12 @@ A modern system tray utility that provides quick access to folders and files thr
 - **Configurable Paths**: Full support for environment variables, network paths, and Unicode characters
 - **Auto-Configuration**: Creates INI file automatically with sensible defaults
 - **Large Folder Support**: Handles folders with hundreds of items with automatic scrolling
-- **Dynamic Versioning**: Version information automatically extracted from script header
+- **Dynamic Versioning**: Version shown in the tray menu
 
 ### ⌨️ User Experience
 - **Keyboard Shortcuts**: Win+F to toggle menu
 - **Click Outside to Close**: Intuitive menu dismissal via low-level mouse hook
-- **Clean Exit**: Reliable script reloading and exit functionality
+- **Clean Exit**: Mouse hook and menu resources released on exit
 
 ## 🚀 Quick Start
 
@@ -217,7 +217,7 @@ Set `MaxLevels` to control how deep the menus can go (1-5 levels supported).
 - **Precise Spacing**: Consistent 8px padding with perfect alignment
 - **No Scrollbars**: Clean ListView implementation without scroll indicators
 - **Optimized Layout**: Dynamic height calculation for perfect fit
-- **Resource Management**: Proper cleanup for smooth reloading
+- **Resource Management**: The global mouse hook is installed only while a menu is open
 
 ## 📄 License
 
