@@ -2,14 +2,14 @@
  * @description AutoHotkey2 Folder Toolbar Script
  * Creates a system tray icon with folder menus similar to Windows "pin folder to taskbar" feature removed in Windows 11.
  * @author mikrom, ClaudeAI
- * @version 3.3.0
+ * @version 3.4.0
  */
 
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
 ; Script version - keep in sync with the @version tag above
-global SCRIPT_VERSION := "3.3.0"
+global SCRIPT_VERSION := "3.4.0"
 
 ; Screen coordinates for every thread (set once, inherited by all threads)
 CoordMode("Mouse", "Screen")
