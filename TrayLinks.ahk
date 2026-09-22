@@ -51,8 +51,8 @@ FolderPath=%OneDrive%\Links
 DarkMode=true
 
 [Advanced]
-; Icon index from Shell32.dll (optional)
-IconIndex=4
+; Icon index from imageres.dll (optional)
+IconIndex=205
 
 ; Maximum menu levels (1-5)
 MaxLevels=3
@@ -183,15 +183,34 @@ if (!DirExist(folderPath)) {
     ExitApp
 }
 
+; Every icon in the app - tray and both menus - comes out of this one file.
+; Numbers are 1-based icon positions within it, the same numbering the INI's
+; IconIndex uses, so swapping the file swaps all of them together.
+global ICON_FILE := "imageres.dll"
+
+; Menu item icons. Swap freely - a number that does not resolve on a given
+; Windows build just leaves that item without an icon.
+global MENU_ICON_OPEN_LOCATION := 195  ; Open item location
+global MENU_ICON_OPEN_FOLDER := 205    ; Open links folder
+global MENU_ICON_COPY_PATH := 244      ; Copy path
+global MENU_ICON_PROPERTIES := 75      ; Properties
+global MENU_ICON_VERSION := 77         ; Version / about
+global MENU_ICON_EDIT_CONFIG := 248    ; Edit configuration
+global MENU_ICON_EXIT := 94            ; Exit
+
 ; Set up the tray icon
 try {
-    TraySetIcon("Shell32.dll", config.iconIndex)
+    TraySetIcon(ICON_FILE, config.iconIndex)
 } catch {
     ; Fallback if that specific icon fails
 }
 
 ; Set tooltip for the tray icon
 A_IconTip := "TrayLinks - Click for menu`nPath: " . folderPath . "`nMode: " . (config.darkMode ? "Dark" : "Light")
+
+; Render standard popup menus dark when the INI asks for dark mode
+if (config.darkMode)
+    EnableDarkMenus()
 
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
@@ -204,18 +223,30 @@ A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Exit", ExitScript)
 A_TrayMenu.Default := "TrayLinks"
 
+; Same icon treatment as the item context menu. The app entry reuses whichever
+; icon the INI picked for the tray itself, so the two always match.
+SetMenuItemIcon(A_TrayMenu, "TrayLinks", config.iconIndex)
+SetMenuItemIcon(A_TrayMenu, "v" . SCRIPT_VERSION, MENU_ICON_VERSION)
+SetMenuItemIcon(A_TrayMenu, "Open Links Folder", MENU_ICON_OPEN_FOLDER)
+SetMenuItemIcon(A_TrayMenu, "Edit Configuration", MENU_ICON_EDIT_CONFIG)
+SetMenuItemIcon(A_TrayMenu, "Exit", MENU_ICON_EXIT)
+
 ; Global variables
 global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
 global isMenuVisible := false
 global mouseHook := 0            ; Low-level mouse hook handle (0 = not installed)
 global mouseHookCallback := 0    ; Callback address, created once at startup
 
-; Menu layout metrics (Windows 11 spacing, 8px base unit)
+; Menu layout metrics (Windows 11 spacing)
+; Horizontal layout:  |<- PADDING ->|<- ListView ->|<- PADDING ->|
+; Vertical layout:    |<- LIST_TOP ->|<- ListView ->|<- BOTTOM_PADDING ->|
 global MENU_WIDTH := 200         ; Menu window width
+global MENU_PADDING := 5         ; Gap between the window edge and the ListView (left/right)
+global MENU_TITLE_INDENT := 6    ; Extra title indent, to line the title up with the item text
+global MENU_LIST_TOP := 36       ; Y position of the ListView = height of the title area
 global MENU_ROW_HEIGHT := 20     ; ListView row height - used for sizing and hit-testing
 global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolling
-global MENU_TITLE_HEIGHT := 40   ; Title area above the ListView
-global MENU_BOTTOM_PADDING := 12 ; Padding below the ListView
+global MENU_BOTTOM_PADDING := 10 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
 ; Windows 11 Fluent Design color schemes
@@ -322,7 +353,7 @@ IsTrayWindow(winHwnd) {
 DefaultConfig() {
     return {
         folderPath: EnvGet("OneDrive") . "\Links",
-        iconIndex: 4,
+        iconIndex: 205,
         maxLevels: 3,
         darkMode: false
     }
@@ -356,9 +387,11 @@ ExitScript(*) {
 
 ; Calculate dynamic height for a menu window with consistent padding
 CalculateMenuHeight(listViewHeight) {
-    ; Total window height = title area + ListView height + bottom padding
-    ; MENU_MAX_ROWS caps listViewHeight, so no extra clamp is needed here
-    return MENU_TITLE_HEIGHT + listViewHeight + MENU_BOTTOM_PADDING
+    ; Total window height = title area + ListView height + bottom padding.
+    ; MENU_LIST_TOP is where the ListView actually starts, so MENU_BOTTOM_PADDING
+    ; is exactly the gap you see below it. MENU_MAX_ROWS caps listViewHeight,
+    ; so no extra clamp is needed here.
+    return MENU_LIST_TOP + listViewHeight + MENU_BOTTOM_PADDING
 }
 
 ; Function to handle opening the root folder
@@ -473,9 +506,52 @@ ShowItemContextMenu(itemData) {
     contextMenu.Add("Copy path", (*) => CopyItemPath(itemData))
     contextMenu.Add("Properties", (*) => ShowItemProperties(itemData))
 
+    ; Icons go in the gutter Windows already reserves for them, not in the label
+    SetMenuItemIcon(contextMenu, "Open item location", MENU_ICON_OPEN_LOCATION)
+    SetMenuItemIcon(contextMenu, "Copy path", MENU_ICON_COPY_PATH)
+    SetMenuItemIcon(contextMenu, "Properties", MENU_ICON_PROPERTIES)
+
     ; Show the context menu at cursor position
     ; Use no parameters to show at current cursor position
     contextMenu.Show()
+}
+
+; Ask Windows to render this process's standard popup menus in dark mode.
+;
+; Menu.SetColor() is not the answer here: it sets the menu background brush but
+; not the text colour, so a dark background leaves black-on-dark text. Windows
+; 10 1809+ can theme menus properly - background, text and hover - but only if
+; the process opts in through SetPreferredAppMode and FlushMenuThemes. Those are
+; undocumented uxtheme exports available by ordinal only (135 and 136), so this
+; is best-effort: on an older build the ordinals resolve to 0 and the menus stay
+; light, exactly as before.
+EnableDarkMenus() {
+    FORCE_DARK := 2  ; PreferredAppMode: Default 0, AllowDark 1, ForceDark 2, ForceLight 3
+
+    try {
+        uxtheme := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+        if (!uxtheme)
+            uxtheme := DllCall("LoadLibrary", "Str", "uxtheme.dll", "Ptr")
+        if (!uxtheme)
+            return
+
+        ; Ordinals are passed where the export name would normally go
+        setPreferredAppMode := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 135, "Ptr")
+        flushMenuThemes := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 136, "Ptr")
+        if (!setPreferredAppMode || !flushMenuThemes)
+            return
+
+        DllCall(setPreferredAppMode, "Int", FORCE_DARK)
+        DllCall(flushMenuThemes)
+    }
+}
+
+; Give a menu item its icon. Each call is guarded on its own so one icon number
+; that does not resolve on this Windows build cannot cost the others theirs.
+SetMenuItemIcon(menuObj, itemName, iconNumber) {
+    try {
+        menuObj.SetIcon(itemName, ICON_FILE, iconNumber)
+    }
 }
 
 ; Open the item's parent folder and select the item
@@ -704,7 +780,9 @@ ShowFolderContents(folderToShow, level := 1) {
         folderName := "Links"
 
     ; Add title with modern spacing and clean Windows 11 styling
-    titleText := menuGui.Add("Text", "x16 y12 w172 c" colors.text, folderName)
+    titleX := MENU_PADDING + MENU_TITLE_INDENT
+    titleWidth := MENU_WIDTH - titleX - MENU_PADDING
+    titleText := menuGui.Add("Text", "x" titleX " y12 w" titleWidth " c" colors.text, folderName)
     titleText.SetFont("s10 w600")  ; Semi-bold for title
 
     ; Scan folder contents
@@ -723,12 +801,16 @@ ShowFolderContents(folderToShow, level := 1) {
     displayRows := Min(numItems, MENU_MAX_ROWS)
     needsScrollbar := numItems > MENU_MAX_ROWS
 
-    ; Create ListView with row count
-    listView := menuGui.Add("ListView", "x12 y36 w176 r" displayRows " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
+    ; Create ListView with row count - borderless so it blends into the window:
+    ; -E0x200 drops WS_EX_CLIENTEDGE (the light gray frame), -Border drops WS_BORDER
+    listViewWidth := MENU_WIDTH - (MENU_PADDING * 2)
+    listViewOpts := "x" MENU_PADDING " y" MENU_LIST_TOP " w" listViewWidth " r" displayRows
+    listViewOpts .= " -Multi -Hdr -Border -E0x200 Background" colors.backgroundCard " c" colors.text
+    listView := menuGui.Add("ListView", listViewOpts, ["", "Name"])
 
     ; Set column widths first: first column 0px (invisible), second column full width for proper selection
-    listView.ModifyCol(1, 0)      ; First column width = 0 (hidden)
-    listView.ModifyCol(2, 172)    ; Second column matches ListView width for full-width selection
+    listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
+    listView.ModifyCol(2, listViewWidth)        ; Second column fills the rest for full-width selection
 
     ; Add event handlers for click, double-click, and right-click
     listView.OnEvent("Click", ItemClick.Bind(level))
