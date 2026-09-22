@@ -222,12 +222,6 @@ global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolli
 global MENU_BOTTOM_PADDING := 10 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
-; Left padding for context menu item text. Windows' own check-mark gutter is all
-; or nothing (see RemoveMenuGutter), so with it gone we indent the text ourselves.
-; Roughly 4px per space: three sits between flush-left and the full gutter that
-; the tray menu still uses. Add or remove a space to taste.
-global MENU_ITEM_INDENT := "   "
-
 ; Windows 11 Fluent Design color schemes
 global darkColors := {
     background: "2D2D2D",      ; Windows 11 dark background
@@ -480,34 +474,16 @@ ItemContextMenu(ctrl, item, isRightClick, *) {
 
 ; Show context menu for an item
 ShowItemContextMenu(itemData) {
+    ; Emoji icons match the ListView item style; Windows' own check-mark gutter
+    ; holds them off the left edge
     contextMenu := Menu()
-    contextMenu.Add(MENU_ITEM_INDENT . "Open item location", (*) => OpenItemLocation(itemData))
-    contextMenu.Add(MENU_ITEM_INDENT . "Copy path", (*) => CopyItemPath(itemData))
-    contextMenu.Add(MENU_ITEM_INDENT . "Properties", (*) => ShowItemProperties(itemData))
-
-    ; Drop the empty check-mark column on the left, we pad the text instead
-    RemoveMenuGutter(contextMenu)
+    contextMenu.Add("📂 Open item location", (*) => OpenItemLocation(itemData))
+    contextMenu.Add("📋 Copy path", (*) => CopyItemPath(itemData))
+    contextMenu.Add("⚙️ Properties", (*) => ShowItemProperties(itemData))
 
     ; Show the context menu at cursor position
     ; Use no parameters to show at current cursor position
     contextMenu.Show()
-}
-
-; Windows reserves a gutter on the left of every popup menu for check marks and
-; item bitmaps. We use neither, so MNS_NOCHECK tells Windows not to reserve it.
-; Must be applied before the menu is shown.
-RemoveMenuGutter(menuObj) {
-    MIM_STYLE := 0x10          ; MENUINFO.fMask - dwStyle is valid
-    MNS_NOCHECK := 0x80000000  ; MENUINFO.dwStyle - do not reserve check-mark space
-
-    try {
-        ; MENUINFO: cbSize, fMask, dwStyle, cyMax, hbrBack, dwContextHelpID, dwMenuData
-        menuInfo := Buffer(A_PtrSize = 8 ? 40 : 28, 0)
-        NumPut("UInt", menuInfo.Size, menuInfo, 0)
-        NumPut("UInt", MIM_STYLE, menuInfo, 4)
-        NumPut("UInt", MNS_NOCHECK, menuInfo, 8)
-        DllCall("SetMenuInfo", "Ptr", menuObj.Handle, "Ptr", menuInfo)
-    }
 }
 
 ; Open the item's parent folder and select the item

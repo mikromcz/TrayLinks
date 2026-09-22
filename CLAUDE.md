@@ -18,48 +18,47 @@ The script follows a functional architecture with these key components:
    - `DefaultConfig()` fallback for error cases
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **Windows 11 GUI System** (`TrayLinks.ahk:207-317`)
+2. **Windows 11 GUI System** (`TrayLinks.ahk:207-311`)
    - `darkColors` / `lightColors` objects with authentic Windows 11 color schemes
    - `ApplyWindows11Styling()` for DWM API rounded corners and drop shadows
    - `fileIconMap` Map-based lookup for 30+ file extension-to-icon mappings
    - `GetColors()` theme selector based on config
 
-3. **Helper Functions** (`TrayLinks.ahk:319-384`)
+3. **Helper Functions** (`TrayLinks.ahk:313-378`)
    - `IsTrayWindow()` - checks if a window belongs to the system tray area
    - `DefaultConfig()` - centralized fallback configuration
    - `CalculateMenuHeight()` - dynamic window height calculation
    - `ScanFolder()` - scans directory returning `{folders, files}` arrays
    - `CalculateMenuPosition()` - calculates cascading menu position with screen bounds clamping
 
-4. **Event Handling** (`TrayLinks.ahk:421-663`)
+4. **Event Handling** (`TrayLinks.ahk:415-639`)
    - `ItemClick()` - single-click navigation for folders with consistent submenu closing
    - `ItemDoubleClick()` - opens files/shortcuts
    - `ItemContextMenu()` - right-click context menu with file operations
-   - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties
-   - `RemoveMenuGutter()` - MNS_NOCHECK, so the popup menu reserves no check-mark column;
-     item text is indented by `MENU_ITEM_INDENT` instead
+   - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties,
+     each prefixed with an emoji icon matching the ListView item style
    - Tooltip monitoring (`CheckForTooltips()`) split into `HoveredItem()` hit-testing,
      `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`
 
-5. **Menu Management** (`TrayLinks.ahk:387-419`)
+5. **Menu Management** (`TrayLinks.ahk:381-413`)
    - `CloseAllMenus()` - destroys all GUIs and resets state
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:718-827`)
+6. **Menu Creation** (`TrayLinks.ahk:694-803`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:830-911`)
+7. **Global Click Detection** (`TrayLinks.ahk:806-887`)
    - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
    - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
      open, so the script stays out of the global mouse path while idle
    - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:917-935`)
+8. **Entry Points** (`TrayLinks.ahk:893-911`)
    - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
@@ -110,16 +109,16 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:718`) - Core menu creation with Windows 11 styling
-2. **ApplyWindows11Styling()** (`TrayLinks.ahk:263`) - DWM API integration for modern appearance
-3. **GetFileIcon()** (`TrayLinks.ahk:314`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:667`) - Single-pass directory scan returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:689`) - Cascading menu positioning with screen bounds
-6. **CalculateMenuHeight()** (`TrayLinks.ahk:368`) - Dynamic height calculation for consistent padding
+1. **ShowFolderContents()** (`TrayLinks.ahk:694`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:257`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:308`) - Map-based file type icon lookup
+4. **ScanFolder()** (`TrayLinks.ahk:643`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:665`) - Cascading menu positioning with screen bounds
+6. **CalculateMenuHeight()** (`TrayLinks.ahk:362`) - Dynamic height calculation for consistent padding
 7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
-8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:880`) - Mouse hook lifecycle
-9. **IsTrayWindow()** (`TrayLinks.ahk:320`) - Tray area window detection helper
-10. **DefaultConfig()** (`TrayLinks.ahk:332`) - Centralized fallback configuration
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:856`) - Mouse hook lifecycle
+9. **IsTrayWindow()** (`TrayLinks.ahk:314`) - Tray area window detection helper
+10. **DefaultConfig()** (`TrayLinks.ahk:326`) - Centralized fallback configuration
 
 ## User Interface Guidelines
 
@@ -136,7 +135,8 @@ TrayLinks/
 - Hidden files and desktop.ini are automatically filtered out
 - Two-column ListView provides precise left padding control
 - Tooltips display full filenames for items longer than 24 characters
-- Right-click context menu provides file operations (Open Location, Copy Path, Properties)
+- Right-click context menu provides file operations (Open Location, Copy Path, Properties),
+  each with an emoji icon; the menu keeps Windows' stock check-mark gutter
 
 ## Error Handling Patterns
 
@@ -177,7 +177,6 @@ Key Windows API usage:
 - **Shell32.dll**: Icon extraction for tray icon
 - **WScript.Shell**: Environment variable expansion with error handling
 - **WindowFromPoint / IsChild**: Window identification in mouse hook
-- **SetMenuInfo**: MNS_NOCHECK to drop the context menu's empty check-mark gutter
 
 ## Testing Considerations
 
