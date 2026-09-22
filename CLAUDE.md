@@ -31,11 +31,12 @@ The script follows a functional architecture with these key components:
    - `ScanFolder()` - scans directory returning `{folders, files}` arrays
    - `CalculateMenuPosition()` - calculates cascading menu position with screen bounds clamping
 
-4. **Event Handling** (`TrayLinks.ahk:415-637`)
+4. **Event Handling** (`TrayLinks.ahk:415-657`)
    - `ItemClick()` - single-click navigation for folders with consistent submenu closing
    - `ItemDoubleClick()` - opens files/shortcuts
    - `ItemContextMenu()` - right-click context menu with file operations
    - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties
+   - `RemoveMenuGutter()` - MNS_NOCHECK, so the popup menu reserves no check-mark column
    - Tooltip monitoring (`CheckForTooltips()`) split into `HoveredItem()` hit-testing,
      `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`
 
@@ -44,20 +45,20 @@ The script follows a functional architecture with these key components:
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:692-801`)
+6. **Menu Creation** (`TrayLinks.ahk:712-821`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:804-885`)
+7. **Global Click Detection** (`TrayLinks.ahk:824-905`)
    - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
    - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
      open, so the script stays out of the global mouse path while idle
    - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:891-909`)
+8. **Entry Points** (`TrayLinks.ahk:911-929`)
    - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
@@ -108,14 +109,14 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:692`) - Core menu creation with Windows 11 styling
+1. **ShowFolderContents()** (`TrayLinks.ahk:712`) - Core menu creation with Windows 11 styling
 2. **ApplyWindows11Styling()** (`TrayLinks.ahk:257`) - DWM API integration for modern appearance
 3. **GetFileIcon()** (`TrayLinks.ahk:308`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:641`) - Single-pass directory scan returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:663`) - Cascading menu positioning with screen bounds
+4. **ScanFolder()** (`TrayLinks.ahk:661`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:683`) - Cascading menu positioning with screen bounds
 6. **CalculateMenuHeight()** (`TrayLinks.ahk:362`) - Dynamic height calculation for consistent padding
 7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
-8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:854`) - Mouse hook lifecycle
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:874`) - Mouse hook lifecycle
 9. **IsTrayWindow()** (`TrayLinks.ahk:314`) - Tray area window detection helper
 10. **DefaultConfig()** (`TrayLinks.ahk:326`) - Centralized fallback configuration
 
@@ -175,6 +176,7 @@ Key Windows API usage:
 - **Shell32.dll**: Icon extraction for tray icon
 - **WScript.Shell**: Environment variable expansion with error handling
 - **WindowFromPoint / IsChild**: Window identification in mouse hook
+- **SetMenuInfo**: MNS_NOCHECK to drop the context menu's empty check-mark gutter
 
 ## Testing Considerations
 

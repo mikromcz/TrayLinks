@@ -215,11 +215,11 @@ global mouseHookCallback := 0    ; Callback address, created once at startup
 ; Vertical layout:    |<- LIST_TOP ->|<- ListView ->|<- BOTTOM_PADDING ->|
 global MENU_WIDTH := 200         ; Menu window width
 global MENU_PADDING := 5         ; Gap between the window edge and the ListView (left/right)
-global MENU_TITLE_INDENT := 4    ; Extra title indent, to line the title up with the item text
+global MENU_TITLE_INDENT := 6    ; Extra title indent, to line the title up with the item text
 global MENU_LIST_TOP := 36       ; Y position of the ListView = height of the title area
 global MENU_ROW_HEIGHT := 20     ; ListView row height - used for sizing and hit-testing
 global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolling
-global MENU_BOTTOM_PADDING := 12 ; Gap between the ListView and the bottom window edge
+global MENU_BOTTOM_PADDING := 10 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
 ; Windows 11 Fluent Design color schemes
@@ -479,9 +479,29 @@ ShowItemContextMenu(itemData) {
     contextMenu.Add("Copy path", (*) => CopyItemPath(itemData))
     contextMenu.Add("Properties", (*) => ShowItemProperties(itemData))
 
+    ; Drop the empty check-mark column on the left
+    RemoveMenuGutter(contextMenu)
+
     ; Show the context menu at cursor position
     ; Use no parameters to show at current cursor position
     contextMenu.Show()
+}
+
+; Windows reserves a gutter on the left of every popup menu for check marks and
+; item bitmaps. We use neither, so MNS_NOCHECK tells Windows not to reserve it.
+; Must be applied before the menu is shown.
+RemoveMenuGutter(menuObj) {
+    MIM_STYLE := 0x10          ; MENUINFO.fMask - dwStyle is valid
+    MNS_NOCHECK := 0x80000000  ; MENUINFO.dwStyle - do not reserve check-mark space
+
+    try {
+        ; MENUINFO: cbSize, fMask, dwStyle, cyMax, hbrBack, dwContextHelpID, dwMenuData
+        menuInfo := Buffer(A_PtrSize = 8 ? 40 : 28, 0)
+        NumPut("UInt", menuInfo.Size, menuInfo, 0)
+        NumPut("UInt", MIM_STYLE, menuInfo, 4)
+        NumPut("UInt", MNS_NOCHECK, menuInfo, 8)
+        DllCall("SetMenuInfo", "Ptr", menuObj.Handle, "Ptr", menuInfo)
+    }
 }
 
 ; Open the item's parent folder and select the item
@@ -740,7 +760,7 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Set column widths first: first column 0px (invisible), second column full width for proper selection
     listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
-    listView.ModifyCol(2, listViewWidth - 4)    ; Second column fills the rest for full-width selection
+    listView.ModifyCol(2, listViewWidth)        ; Second column fills the rest for full-width selection
 
     ; Add event handlers for click, double-click, and right-click
     listView.OnEvent("Click", ItemClick.Bind(level))
