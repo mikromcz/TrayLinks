@@ -222,6 +222,15 @@ global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolli
 global MENU_BOTTOM_PADDING := 10 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
+; Context menu icons. Numbers are shell32.dll icon positions using the same
+; 1-based numbering as the IconIndex setting in the INI, so a number that works
+; for the tray icon works here too. Swap freely - a number that does not resolve
+; just leaves that item without an icon.
+global MENU_ICON_FILE := "shell32.dll"
+global MENU_ICON_OPEN_LOCATION := 5    ; Open folder
+global MENU_ICON_COPY_PATH := 135      ; Two pages / copy
+global MENU_ICON_PROPERTIES := 22      ; Properties sheet
+
 ; Windows 11 Fluent Design color schemes
 global darkColors := {
     background: "2D2D2D",      ; Windows 11 dark background
@@ -474,16 +483,27 @@ ItemContextMenu(ctrl, item, isRightClick, *) {
 
 ; Show context menu for an item
 ShowItemContextMenu(itemData) {
-    ; Emoji icons match the ListView item style; Windows' own check-mark gutter
-    ; holds them off the left edge
     contextMenu := Menu()
-    contextMenu.Add("📂 Open item location", (*) => OpenItemLocation(itemData))
-    contextMenu.Add("📋 Copy path", (*) => CopyItemPath(itemData))
-    contextMenu.Add("⚙️ Properties", (*) => ShowItemProperties(itemData))
+    contextMenu.Add("Open item location", (*) => OpenItemLocation(itemData))
+    contextMenu.Add("Copy path", (*) => CopyItemPath(itemData))
+    contextMenu.Add("Properties", (*) => ShowItemProperties(itemData))
+
+    ; Icons go in the gutter Windows already reserves for them, not in the label
+    SetMenuItemIcon(contextMenu, "Open item location", MENU_ICON_OPEN_LOCATION)
+    SetMenuItemIcon(contextMenu, "Copy path", MENU_ICON_COPY_PATH)
+    SetMenuItemIcon(contextMenu, "Properties", MENU_ICON_PROPERTIES)
 
     ; Show the context menu at cursor position
     ; Use no parameters to show at current cursor position
     contextMenu.Show()
+}
+
+; Give a menu item its icon. Each call is guarded on its own so one icon number
+; that does not resolve on this Windows build cannot cost the others theirs.
+SetMenuItemIcon(menuObj, itemName, iconNumber) {
+    try {
+        menuObj.SetIcon(itemName, MENU_ICON_FILE, iconNumber)
+    }
 }
 
 ; Open the item's parent folder and select the item
