@@ -193,6 +193,22 @@ try {
 ; Set tooltip for the tray icon
 A_IconTip := "TrayLinks - Click for menu`nPath: " . folderPath . "`nMode: " . (config.darkMode ? "Dark" : "Light")
 
+; Context and tray menu icons. Numbers are shell32.dll icon positions using the
+; same 1-based numbering as the IconIndex setting in the INI, so a number that
+; works for the tray icon works here too. Swap freely - a number that does not
+; resolve just leaves that item without an icon.
+global MENU_ICON_FILE := "shell32.dll"
+global MENU_ICON_OPEN_LOCATION := 5    ; Open folder
+global MENU_ICON_COPY_PATH := 135      ; Two pages / copy
+global MENU_ICON_PROPERTIES := 22      ; Properties sheet
+global MENU_ICON_VERSION := 24         ; Information
+global MENU_ICON_EDIT_CONFIG := 70     ; Text file / editor
+global MENU_ICON_EXIT := 28            ; Door / exit
+
+; Render standard popup menus dark when the INI asks for dark mode
+if (config.darkMode)
+    EnableDarkMenus()
+
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
 A_TrayMenu.Add("TrayLinks", OpenGitHub)  ; Script name - opens GitHub
@@ -203,6 +219,14 @@ A_TrayMenu.Add("Edit Configuration", EditConfig)
 A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Exit", ExitScript)
 A_TrayMenu.Default := "TrayLinks"
+
+; Same icon treatment as the item context menu. The app entry reuses whichever
+; icon the INI picked for the tray itself, so the two always match.
+SetMenuItemIcon(A_TrayMenu, "TrayLinks", config.iconIndex)
+SetMenuItemIcon(A_TrayMenu, "v" . SCRIPT_VERSION, MENU_ICON_VERSION)
+SetMenuItemIcon(A_TrayMenu, "Open Links Folder", MENU_ICON_OPEN_LOCATION)
+SetMenuItemIcon(A_TrayMenu, "Edit Configuration", MENU_ICON_EDIT_CONFIG)
+SetMenuItemIcon(A_TrayMenu, "Exit", MENU_ICON_EXIT)
 
 ; Global variables
 global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
@@ -221,15 +245,6 @@ global MENU_ROW_HEIGHT := 20     ; ListView row height - used for sizing and hit
 global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolling
 global MENU_BOTTOM_PADDING := 10 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
-
-; Context menu icons. Numbers are shell32.dll icon positions using the same
-; 1-based numbering as the IconIndex setting in the INI, so a number that works
-; for the tray icon works here too. Swap freely - a number that does not resolve
-; just leaves that item without an icon.
-global MENU_ICON_FILE := "shell32.dll"
-global MENU_ICON_OPEN_LOCATION := 5    ; Open folder
-global MENU_ICON_COPY_PATH := 135      ; Two pages / copy
-global MENU_ICON_PROPERTIES := 22      ; Properties sheet
 
 ; Windows 11 Fluent Design color schemes
 global darkColors := {
@@ -496,6 +511,36 @@ ShowItemContextMenu(itemData) {
     ; Show the context menu at cursor position
     ; Use no parameters to show at current cursor position
     contextMenu.Show()
+}
+
+; Ask Windows to render this process's standard popup menus in dark mode.
+;
+; Menu.SetColor() is not the answer here: it sets the menu background brush but
+; not the text colour, so a dark background leaves black-on-dark text. Windows
+; 10 1809+ can theme menus properly - background, text and hover - but only if
+; the process opts in through SetPreferredAppMode and FlushMenuThemes. Those are
+; undocumented uxtheme exports available by ordinal only (135 and 136), so this
+; is best-effort: on an older build the ordinals resolve to 0 and the menus stay
+; light, exactly as before.
+EnableDarkMenus() {
+    FORCE_DARK := 2  ; PreferredAppMode: Default 0, AllowDark 1, ForceDark 2, ForceLight 3
+
+    try {
+        uxtheme := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+        if (!uxtheme)
+            uxtheme := DllCall("LoadLibrary", "Str", "uxtheme.dll", "Ptr")
+        if (!uxtheme)
+            return
+
+        ; Ordinals are passed where the export name would normally go
+        setPreferredAppMode := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 135, "Ptr")
+        flushMenuThemes := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 136, "Ptr")
+        if (!setPreferredAppMode || !flushMenuThemes)
+            return
+
+        DllCall(setPreferredAppMode, "Int", FORCE_DARK)
+        DllCall(flushMenuThemes)
+    }
 }
 
 ; Give a menu item its icon. Each call is guarded on its own so one icon number

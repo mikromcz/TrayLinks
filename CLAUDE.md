@@ -11,56 +11,58 @@ TrayLinks is a modern AutoHotkey v2.0 script that creates a sophisticated system
 ### Main Script Structure (TrayLinks.ahk)
 The script follows a functional architecture with these key components:
 
-1. **Configuration Management** (`TrayLinks.ahk:18-168`)
+1. **Configuration Management** (`TrayLinks.ahk:18-192`)
    - INI file handling with automatic creation of default config
    - Environment variable expansion via `ExpandPath()` using WScript.Shell COM
    - Custom INI parser (`ParseIniValue()`) for Unicode support
    - `DefaultConfig()` fallback for error cases
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **Windows 11 GUI System** (`TrayLinks.ahk:207-319`)
+2. **Windows 11 GUI System** (`TrayLinks.ahk:231-336`)
    - `darkColors` / `lightColors` objects with authentic Windows 11 color schemes
    - `ApplyWindows11Styling()` for DWM API rounded corners and drop shadows
    - `fileIconMap` Map-based lookup for 30+ file extension-to-icon mappings
    - `GetColors()` theme selector based on config
 
-3. **Helper Functions** (`TrayLinks.ahk:321-386`)
+3. **Helper Functions** (`TrayLinks.ahk:338-402`)
    - `IsTrayWindow()` - checks if a window belongs to the system tray area
    - `DefaultConfig()` - centralized fallback configuration
    - `CalculateMenuHeight()` - dynamic window height calculation
    - `ScanFolder()` - scans directory returning `{folders, files}` arrays
    - `CalculateMenuPosition()` - calculates cascading menu position with screen bounds clamping
 
-4. **Event Handling** (`TrayLinks.ahk:423-659`)
+4. **Event Handling** (`TrayLinks.ahk:439-704`)
    - `ItemClick()` - single-click navigation for folders with consistent submenu closing
    - `ItemDoubleClick()` - opens files/shortcuts
    - `ItemContextMenu()` - right-click context menu with file operations
    - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties
    - `SetMenuItemIcon()` - `Menu.SetIcon()` per item, so icons sit in the gutter
      Windows reserves rather than in the label text; numbers in the `MENU_ICON_*`
-     constants, guarded individually so one bad number costs only its own icon
+     constants, guarded individually so one bad number costs only its own icon.
+     Used by both the item context menu and the tray menu
+   - `EnableDarkMenus()` - opts the process into dark popup menus in dark mode
    - Tooltip monitoring (`CheckForTooltips()`) split into `HoveredItem()` hit-testing,
      `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`
 
-5. **Menu Management** (`TrayLinks.ahk:389-421`)
+5. **Menu Management** (`TrayLinks.ahk:405-437`)
    - `CloseAllMenus()` - destroys all GUIs and resets state
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:714-823`)
+6. **Menu Creation** (`TrayLinks.ahk:759-868`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:826-907`)
+7. **Global Click Detection** (`TrayLinks.ahk:871-952`)
    - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
    - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
      open, so the script stays out of the global mouse path while idle
    - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:913-931`)
+8. **Entry Points** (`TrayLinks.ahk:958-976`)
    - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
@@ -71,6 +73,11 @@ The script follows a functional architecture with these key components:
 - **Advanced Section**: IconIndex (Shell32.dll), MaxLevels (1-5)
 
 ### Windows 11 Color Theming
+The menu windows are painted from the colour objects below. The two *popup*
+menus (tray and item context) are standard Win32 menus painted by Windows, so
+they follow `EnableDarkMenus()` instead - see the dark mode note under Windows
+API Integration.
+
 Two authentic Windows 11 themes controlled by DarkMode setting:
 - **Dark Mode**: `#2D2D2D` background, `#3C3C3C` elevated surfaces, `#005FB8` accent
 - **Light Mode**: `#F9F9F9` background, white elevated surfaces, `#005FB8` accent
@@ -111,16 +118,16 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:714`) - Core menu creation with Windows 11 styling
-2. **ApplyWindows11Styling()** (`TrayLinks.ahk:265`) - DWM API integration for modern appearance
-3. **GetFileIcon()** (`TrayLinks.ahk:316`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:663`) - Single-pass directory scan returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:685`) - Cascading menu positioning with screen bounds
-6. **CalculateMenuHeight()** (`TrayLinks.ahk:370`) - Dynamic height calculation for consistent padding
+1. **ShowFolderContents()** (`TrayLinks.ahk:759`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:281`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:332`) - Map-based file type icon lookup
+4. **ScanFolder()** (`TrayLinks.ahk:708`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:730`) - Cascading menu positioning with screen bounds
+6. **CalculateMenuHeight()** (`TrayLinks.ahk:386`) - Dynamic height calculation for consistent padding
 7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
-8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:876`) - Mouse hook lifecycle
-9. **IsTrayWindow()** (`TrayLinks.ahk:322`) - Tray area window detection helper
-10. **DefaultConfig()** (`TrayLinks.ahk:334`) - Centralized fallback configuration
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:921`) - Mouse hook lifecycle
+9. **IsTrayWindow()** (`TrayLinks.ahk:338`) - Tray area window detection helper
+10. **DefaultConfig()** (`TrayLinks.ahk:350`) - Centralized fallback configuration
 
 ## User Interface Guidelines
 
@@ -176,7 +183,12 @@ Key Windows API usage:
 - **DWM APIs**: Window styling, rounded corners, drop shadows
 - **Low-level mouse hook**: Global click detection with proper cleanup
 - **ShowScrollBar**: Horizontal scrollbar hiding for clean appearance
-- **Shell32.dll**: Icon extraction for the tray icon and the context menu items
+- **Shell32.dll**: Icon extraction for the tray icon and both menus' items
+- **uxtheme ordinals 135/136**: `SetPreferredAppMode` + `FlushMenuThemes` make the
+  standard popup menus render dark. Undocumented and Windows 10 1809+ only, so the
+  call is best-effort and silently leaves menus light when unavailable. Do not
+  reach for `Menu.SetColor()` instead: it changes the background but not the text
+  colour, giving black-on-dark
 - **WScript.Shell**: Environment variable expansion with error handling
 - **WindowFromPoint / IsChild**: Window identification in mouse hook
 
