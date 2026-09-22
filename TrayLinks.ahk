@@ -6,6 +6,14 @@
  */
 
 #Requires AutoHotkey v2.0
+#SingleInstance Force
+
+; Script version - keep in sync with the @version tag above
+global SCRIPT_VERSION := "3.3.0"
+
+; Screen coordinates for every thread (set once, inherited by all threads)
+CoordMode("Mouse", "Screen")
+CoordMode("ToolTip", "Screen")
 
 ; Configuration - INI file handling
 SplitPath(A_ScriptName, , , , &nameNoExt)
@@ -70,7 +78,7 @@ ParseIniValue(iniContent, section, key, defaultValue) {
 
     ; Find the section
     inSection := false
-    for lineNum, line in lines {
+    for line in lines {
         line := Trim(line)
 
         ; Skip empty lines and comments
@@ -183,12 +191,12 @@ try {
 }
 
 ; Set tooltip for the tray icon
-A_IconTip := "Folder Links - Click for menu`nPath: " . folderPath . "`nMode: " . (config.darkMode ? "Dark" : "Light")
+A_IconTip := "TrayLinks - Click for menu`nPath: " . folderPath . "`nMode: " . (config.darkMode ? "Dark" : "Light")
 
 ; Customize the tray menu (will show on right-click)
 A_TrayMenu.Delete() ; Clear default menu
 A_TrayMenu.Add("TrayLinks", OpenGitHub)  ; Script name - opens GitHub
-A_TrayMenu.Add("v" . getVersionFromScript(), OpenGitHub)     ; Version - opens GitHub
+A_TrayMenu.Add("v" . SCRIPT_VERSION, OpenGitHub)  ; Version - opens GitHub
 A_TrayMenu.Add()  ; Separator
 A_TrayMenu.Add("Open Links Folder", OpenRootFolder)
 A_TrayMenu.Add("Edit Configuration", EditConfig)
@@ -199,6 +207,16 @@ A_TrayMenu.Default := "TrayLinks"
 ; Global variables
 global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
 global isMenuVisible := false
+global mouseHook := 0            ; Low-level mouse hook handle (0 = not installed)
+global mouseHookCallback := 0    ; Callback address, created once at startup
+
+; Menu layout metrics (Windows 11 spacing, 8px base unit)
+global MENU_WIDTH := 200         ; Menu window width
+global MENU_ROW_HEIGHT := 20     ; ListView row height - used for sizing and hit-testing
+global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolling
+global MENU_TITLE_HEIGHT := 40   ; Title area above the ListView
+global MENU_BOTTOM_PADDING := 12 ; Padding below the ListView
+global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
 ; Windows 11 Fluent Design color schemes
 global darkColors := {
@@ -285,8 +303,7 @@ global fileIconMap := Map(
 ; Get appropriate icon for file type
 GetFileIcon(extension) {
     global fileIconMap
-    extension := StrLower(extension)
-    return fileIconMap.Has(extension) ? fileIconMap[extension] : "📄"
+    return fileIconMap.Get(StrLower(extension), "📄")
 }
 
 ; Check if a window belongs to the system tray area
@@ -311,25 +328,6 @@ DefaultConfig() {
     }
 }
 
-; Function to get version from script JSDoc header
-getVersionFromScript() {
-    try {
-        ; Read the script file to extract version from header comment
-        scriptContent := FileRead(A_ScriptFullPath)
-
-        ; Look for JSDoc @version format first
-        if (RegExMatch(scriptContent, "im)@version\s+([\d\.]+)", &match)) {
-            return match[1]
-        }
-
-        ; Fallback if version not found in expected format
-        return "no version"
-    } catch {
-        ; Fallback version if file reading fails
-        return "version error"
-    }
-}
-
 ; Function to open GitHub repository
 OpenGitHub(*) {
     try {
@@ -349,45 +347,18 @@ EditConfig(*) {
     }
 }
 
-; Function to reload script
-ReloadScript(*) {
-    ; Clean shutdown before reload - unhook mouse first to prevent interference
-    try {
-        DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
-    }
-    ; Close all menus
-    CloseAllMenus()
-    ; Small delay to ensure cleanup completes
-    Sleep(100)
-    ; Now reload
-    Reload
-}
-
 ; Function to exit script
 ExitScript(*) {
-    ; Clean shutdown - unhook mouse first to prevent interference
-    try {
-        DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
-    }
-    ; Close all menus
+    ; Clean shutdown - CloseAllMenus() also removes the mouse hook
     CloseAllMenus()
-    ; Force exit
     ExitApp()
 }
 
 ; Calculate dynamic height for a menu window with consistent padding
 CalculateMenuHeight(listViewHeight) {
-    ; Title area height with Windows 11 spacing (title + padding, no separator)
-    titleHeight := 40
-
-    ; Consistent bottom padding for all item counts
-    bottomPadding := 12
-
     ; Total window height = title area + ListView height + bottom padding
-    height := titleHeight + listViewHeight + bottomPadding
-
-    ; Max height constraint - 1000px to fit more items while allowing scrolling
-    return Min(1000, height)
+    ; MENU_MAX_ROWS caps listViewHeight, so no extra clamp is needed here
+    return MENU_TITLE_HEIGHT + listViewHeight + MENU_BOTTOM_PADDING
 }
 
 ; Function to handle opening the root folder
@@ -406,6 +377,9 @@ CloseAllMenus() {
 
     ; Stop tooltip monitoring and clear any existing tooltips
     StopTooltipMonitoring()
+
+    ; No menus open - stop watching global mouse traffic
+    RemoveMouseHook()
 
     for level, gui in currentGuis {
         if (IsObject(gui)) {
@@ -441,7 +415,7 @@ ItemClick(level, ctrl, *) {
         return
 
     ; Get the selected item data
-    item := ctrl.itemData[rowNum].data
+    item := ctrl.itemData[rowNum]
 
     ; Close deeper level menus regardless of item type
     CloseMenusAtLevel(level + 1)
@@ -456,14 +430,14 @@ ItemClick(level, ctrl, *) {
 }
 
 ; Handle ListView item double-click - Open files/shortcuts
-ItemDoubleClick(level, ctrl, *) {
+ItemDoubleClick(ctrl, *) {
     ; Get selected row
     rowNum := ctrl.GetNext(0)
     if (rowNum = 0 || rowNum > ctrl.itemData.Length)
         return
 
     ; Get the selected item data
-    item := ctrl.itemData[rowNum].data
+    item := ctrl.itemData[rowNum]
 
     ; Only process for non-folder items (files/shortcuts)
     if (item.type != "folder") {
@@ -478,7 +452,7 @@ ItemDoubleClick(level, ctrl, *) {
 }
 
 ; Handle ListView context menu (right-click)
-ItemContextMenu(level, ctrl, item, isRightClick, *) {
+ItemContextMenu(ctrl, item, isRightClick, *) {
     ; Only show context menu on right-click
     if (!isRightClick)
         return
@@ -488,15 +462,12 @@ ItemContextMenu(level, ctrl, item, isRightClick, *) {
     if (rowNum = 0 || rowNum > ctrl.itemData.Length)
         return
 
-    ; Get the selected item data
-    itemData := ctrl.itemData[rowNum].data
-
     ; Create context menu with Windows 11 styling
-    ShowItemContextMenu(itemData, ctrl)
+    ShowItemContextMenu(ctrl.itemData[rowNum])
 }
 
 ; Show context menu for an item
-ShowItemContextMenu(itemData, listViewCtrl) {
+ShowItemContextMenu(itemData) {
     contextMenu := Menu()
     contextMenu.Add("Open item location", (*) => OpenItemLocation(itemData))
     contextMenu.Add("Copy path", (*) => CopyItemPath(itemData))
@@ -568,95 +539,91 @@ StopTooltipMonitoring() {
     global tooltipActive
     tooltipActive := false
     SetTimer(CheckForTooltips, 0)
-    ToolTip()  ; Clear any existing tooltip
+
+    ; Clear the tooltip AND the last-shown name, otherwise hovering the same
+    ; item again after reopening the menu would be treated as "no change"
+    ClearTooltip()
 }
 
 ; Check if mouse is hovering over any ListView item and show tooltip
 CheckForTooltips() {
-    global currentGuis, lastTooltipItem
+    global currentGuis
 
     if (!isMenuVisible) {
         StopTooltipMonitoring()
         return
     }
 
-    ; Get mouse position and window under cursor
-    CoordMode("Mouse", "Screen")
-    MouseGetPos(&mouseX, &mouseY, &winHwnd)
+    MouseGetPos(&mouseX, &mouseY)
 
     ; Check each active menu GUI
     for level, gui in currentGuis {
-        if (IsObject(gui)) {
-            try {
-                ; Check if mouse is over this GUI
-                WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " gui.Hwnd)
-
-                if (mouseX >= winX && mouseX <= winX + winW &&
-                    mouseY >= winY && mouseY <= winY + winH) {
-
-                    ; Mouse is over this menu - find the ListView control
-                    for ctrlHwnd, ctrlObj in gui {
-                        if (ctrlObj.Type = "ListView") {
-                            ; Get ListView position relative to GUI
-                            ctrlObj.GetPos(&lvX, &lvY, &lvW, &lvH)
-
-                            ; Convert to screen coordinates
-                            lvScreenX := winX + lvX
-                            lvScreenY := winY + lvY
-
-                            ; Check if mouse is over the ListView
-                            if (mouseX >= lvScreenX && mouseX <= lvScreenX + lvW &&
-                                mouseY >= lvScreenY && mouseY <= lvScreenY + lvH) {
-
-                                ; Calculate relative position within ListView
-                                relX := mouseX - lvScreenX
-                                relY := mouseY - lvScreenY
-
-                                ; Determine which row (approximate - each row is ~20px)
-                                rowIndex := Floor(relY / 20) + 1
-
-                                ; Check if we have data for this row
-                                if (rowIndex > 0 && rowIndex <= ctrlObj.itemData.Length) {
-                                    itemData := ctrlObj.itemData[rowIndex].data
-
-                                    ; For files, remove extension to match ListView display; folders keep full name
-                                    if (itemData.type = "folder") {
-                                        tooltipText := itemData.name
-                                    } else {
-                                        ; Remove extension from filename to match what's shown in ListView
-                                        SplitPath(itemData.name, , , , &nameNoExt)
-                                        tooltipText := nameNoExt
-                                    }
-
-                                    ; Only show tooltip if the name is longer than 24 characters
-                                    if (StrLen(tooltipText) > 24) {
-                                        ; Only update tooltip if it's different from last one
-                                        if (tooltipText != lastTooltipItem) {
-                                            ; Set coordinate mode for ToolTip to screen coordinates
-                                            CoordMode("ToolTip", "Screen")
-                                            ToolTip(tooltipText, mouseX + 15, mouseY + 15)
-                                            lastTooltipItem := tooltipText
-                                        }
-                                    } else {
-                                        ; Clear tooltip for short names
-                                        if (lastTooltipItem != "") {
-                                            ToolTip()
-                                            lastTooltipItem := ""
-                                        }
-                                    }
-                                    return
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {
-                ; Ignore errors with destroyed windows - just skip this GUI
-            }
+        item := HoveredItem(gui, mouseX, mouseY)
+        if (IsObject(item)) {
+            ShowItemTooltip(item, mouseX, mouseY)
+            return
         }
     }
 
     ; Mouse not over any ListView item - clear tooltip
+    ClearTooltip()
+}
+
+; Return the item under the given screen position in a menu, or "" if none
+HoveredItem(gui, mouseX, mouseY) {
+    try {
+        ; Check if mouse is over this GUI
+        WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " gui.Hwnd)
+        if (mouseX < winX || mouseX > winX + winW || mouseY < winY || mouseY > winY + winH)
+            return ""
+
+        ; Check if mouse is over the ListView (position is relative to the GUI)
+        gui.listView.GetPos(&lvX, &lvY, &lvW, &lvH)
+        relX := mouseX - (winX + lvX)
+        relY := mouseY - (winY + lvY)
+        if (relX < 0 || relX > lvW || relY < 0 || relY > lvH)
+            return ""
+
+        ; Determine which row the mouse is over
+        rowIndex := Floor(relY / MENU_ROW_HEIGHT) + 1
+        itemData := gui.listView.itemData
+
+        return (rowIndex > 0 && rowIndex <= itemData.Length) ? itemData[rowIndex] : ""
+    } catch {
+        ; Ignore errors with destroyed windows - just skip this GUI
+        return ""
+    }
+}
+
+; Show a tooltip for an item, but only when its displayed name is long
+ShowItemTooltip(item, mouseX, mouseY) {
+    global lastTooltipItem
+
+    ; For files, remove extension to match ListView display; folders keep full name
+    if (item.type = "folder") {
+        tooltipText := item.name
+    } else {
+        SplitPath(item.name, , , , &nameNoExt)
+        tooltipText := nameNoExt
+    }
+
+    ; Short names are fully visible in the menu already
+    if (StrLen(tooltipText) <= TOOLTIP_MIN_LENGTH) {
+        ClearTooltip()
+        return
+    }
+
+    ; Only update tooltip if it's different from last one
+    if (tooltipText != lastTooltipItem) {
+        ToolTip(tooltipText, mouseX + 15, mouseY + 15)
+        lastTooltipItem := tooltipText
+    }
+}
+
+; Hide the tooltip if one is showing
+ClearTooltip() {
+    global lastTooltipItem
+
     if (lastTooltipItem != "") {
         ToolTip()
         lastTooltipItem := ""
@@ -669,21 +636,17 @@ ScanFolder(folderToShow) {
     folders := []
     files := []
 
+    ; Single pass over the directory, split by attribute
     try {
-        loop files, folderToShow "\*", "D"
+        loop files, folderToShow "\*", "FD"
         {
             if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
                 continue
-            folders.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder" })
-        }
-    }
 
-    try {
-        loop files, folderToShow "\*", "F"
-        {
-            if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
-                continue
-            files.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "file" })
+            if (InStr(A_LoopFileAttrib, "D"))
+                folders.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder" })
+            else
+                files.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "file" })
         }
     }
 
@@ -695,7 +658,6 @@ CalculateMenuPosition(level, winWidth, menuHeight) {
     global currentGuis
 
     if (level = 1) {
-        CoordMode("Mouse", "Screen")
         MouseGetPos(&mouseX, &mouseY)
         winX := mouseX - 100
         winY := mouseY - 40
@@ -707,7 +669,6 @@ CalculateMenuPosition(level, winWidth, menuHeight) {
             winX := prevX - winWidth - 5
             winY := prevY
         } else {
-            CoordMode("Mouse", "Screen")
             MouseGetPos(&mouseX, &mouseY)
             winX := mouseX - (level * (winWidth + 5))
             winY := mouseY - 40
@@ -723,7 +684,7 @@ CalculateMenuPosition(level, winWidth, menuHeight) {
 
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
-    global currentGuis, isMenuVisible
+    global currentGuis, isMenuVisible, folderPath
 
     ; Get current color scheme
     colors := GetColors()
@@ -758,10 +719,9 @@ ShowFolderContents(folderToShow, level := 1) {
     if (numItems < 1)
         numItems := 1
 
-    ; Calculate max rows that fit in 1000px window (approximately 40 rows)
-    maxRows := 40
-    displayRows := Min(numItems, maxRows)
-    needsScrollbar := numItems > maxRows
+    ; Cap the visible rows - anything beyond that scrolls
+    displayRows := Min(numItems, MENU_MAX_ROWS)
+    needsScrollbar := numItems > MENU_MAX_ROWS
 
     ; Create ListView with row count
     listView := menuGui.Add("ListView", "x12 y36 w176 r" displayRows " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
@@ -772,16 +732,16 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Add event handlers for click, double-click, and right-click
     listView.OnEvent("Click", ItemClick.Bind(level))
-    listView.OnEvent("DoubleClick", ItemDoubleClick.Bind(level))
-    listView.OnEvent("ContextMenu", ItemContextMenu.Bind(level))
+    listView.OnEvent("DoubleClick", ItemDoubleClick)
+    listView.OnEvent("ContextMenu", ItemContextMenu)
 
-    ; Add items to the ListView (folders first)
+    ; Add items to the ListView (folders first) - row order matches itemData order
     listItems := []
 
     ; Add folders with Windows 11 style icons - using second column
     for folder in folders {
-        row := listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
-        listItems.Push({ row: row, data: folder })
+        listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
+        listItems.Push(folder)
     }
 
     ; Add files - hide all extensions with modern icons - using second column
@@ -790,20 +750,19 @@ ShowFolderContents(folderToShow, level := 1) {
         SplitPath(file.name, , , &ext, &nameNoExt)
 
         ; Choose icon based on file type (Windows 11 style)
-        icon := GetFileIcon(ext)
-        row := listView.Add("", "", icon . " " nameNoExt)  ; Empty first column, data in second
-        listItems.Push({ row: row, data: file })
+        listView.Add("", "", GetFileIcon(ext) . " " nameNoExt)  ; Empty first column, data in second
+        listItems.Push(file)
     }
 
-    ; Store items data with the ListView
+    ; Store items data with the ListView, and the ListView with its GUI
     listView.itemData := listItems
+    menuGui.listView := listView
 
     ; Calculate equivalent height for window sizing
-    listViewHeight := displayRows * 20
-    menuHeight := CalculateMenuHeight(listViewHeight)
+    menuHeight := CalculateMenuHeight(displayRows * MENU_ROW_HEIGHT)
 
     ; Position window based on level
-    winWidth := 200
+    winWidth := MENU_WIDTH
     pos := CalculateMenuPosition(level, winWidth, menuHeight)
 
     ; Show the GUI with the dynamic height
@@ -817,65 +776,31 @@ ShowFolderContents(folderToShow, level := 1) {
         ; Small delay to ensure ListView is fully rendered
         Sleep(20)
         ; Large folders: hide only horizontal scrollbar, keep vertical
-        DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", 0x1033, "Ptr", 0x8, "Ptr", 0)  ; LVM_SETEXTENDEDLISTVIEWSTYLE with LVS_EX_NOHSCROLL
-        DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; Hide horizontal scrollbar
+        DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; SB_HORZ, hide
     }
 
     ; Store the GUI for this level
     currentGuis[level] := menuGui
 
-    ; Set menu as visible and start tooltip monitoring
+    ; Set menu as visible, watch for clicks outside and start tooltip monitoring
     isMenuVisible := true
+    InstallMouseHook()
     StartTooltipMonitoring()
-}
-
-; Handle global mouse clicks to close menus when clicking outside
-OnGlobalMouseClick(wParam, lParam, msg, hwnd) {
-    global currentGuis, isMenuVisible
-
-    ; Only process if menus are visible
-    if (!isMenuVisible)
-        return
-
-    ; Get the window under the mouse cursor
-    CoordMode("Mouse", "Screen")
-    MouseGetPos(, , &winUnderMouse)
-
-    ; Check if click was on any menu or the tray icon
-    clickedOnMenu := false
-
-    ; Check each menu GUI
-    for level, gui in currentGuis {
-        try {
-            if (IsObject(gui) && (winUnderMouse = gui.Hwnd || hwnd = gui.Hwnd)) {
-                clickedOnMenu := true
-                break
-            }
-        }
-    }
-
-    ; Also check if clicked on tray (to prevent closing when clicking tray icon)
-    if (!clickedOnMenu && IsTrayWindow(winUnderMouse))
-        clickedOnMenu := true
-
-    ; If clicked outside menus and not on tray, close all
-    if (!clickedOnMenu) {
-        CloseAllMenus()
-    }
 }
 
 ; Low-level mouse hook for better click detection
 LowLevelMouseProc(nCode, wParam, lParam) {
-    global isMenuVisible
+    global isMenuVisible, currentGuis
 
     ; Only process if menus are visible and it's a left button up
     if (nCode >= 0 && isMenuVisible && wParam = 0x202) {  ; WM_LBUTTONUP
-        ; Get mouse position from the hook data
-        mouseData := NumGet(lParam, 0, "Int")  ; x coordinate
-        mouseY := NumGet(lParam, 4, "Int")     ; y coordinate
+        ; Get mouse position from the hook data (MSLLHOOKSTRUCT starts with a POINT)
+        mouseX := NumGet(lParam, 0, "Int")  ; x coordinate
+        mouseY := NumGet(lParam, 4, "Int")  ; y coordinate
 
-        ; Get window under mouse
-        winUnderMouse := DllCall("WindowFromPoint", "Int64", mouseData | (mouseY << 32), "Ptr")
+        ; Get window under mouse - mask x so a negative value (monitor left of the
+        ; primary one) cannot bleed into the packed y coordinate
+        winUnderMouse := DllCall("WindowFromPoint", "Int64", (mouseX & 0xFFFFFFFF) | (mouseY << 32), "Ptr")
 
         ; Check if click was on any menu
         clickedOnMenu := false
@@ -912,46 +837,63 @@ LowLevelMouseProc(nCode, wParam, lParam) {
     return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
 }
 
-; Install low-level mouse hook for better click detection
-mouseHook := DllCall("SetWindowsHookEx", "Int", 14, "Ptr", CallbackCreate(LowLevelMouseProc), "Ptr", DllCall("GetModuleHandle", "Ptr", 0, "Ptr"), "UInt", 0, "Ptr")
+; Install the low-level mouse hook - only while a menu is open, so the script
+; does not sit in the path of every mouse message while idle
+InstallMouseHook() {
+    global mouseHook, mouseHookCallback
 
-; Register for mouse clicks (backup method)
-OnMessage(0x202, OnGlobalMouseClick)  ; WM_LBUTTONUP
+    if (mouseHook)
+        return
+
+    try {
+        mouseHook := DllCall("SetWindowsHookEx", "Int", 14, "Ptr", mouseHookCallback,
+            "Ptr", DllCall("GetModuleHandle", "Ptr", 0, "Ptr"), "UInt", 0, "Ptr")
+    } catch {
+        mouseHook := 0
+    }
+}
+
+; Remove the low-level mouse hook
+RemoveMouseHook() {
+    global mouseHook
+
+    if (!mouseHook)
+        return
+
+    try {
+        DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
+    }
+    mouseHook := 0
+}
+
+; Create the hook callback once - the address stays valid for the whole session
+mouseHookCallback := CallbackCreate(LowLevelMouseProc)
 
 ; Clean up hook on exit
-OnExit((*) => DllCall("UnhookWindowsHookEx", "Ptr", mouseHook))
+OnExit((*) => RemoveMouseHook())
 
 ; Use OnMessage to detect when mouse clicks on tray icon
 OnMessage(0x404, TrayIconClick)  ; WM_USER + 4 (0x400 + 4)
 
-; Handle tray icon click
-TrayIconClick(wParam, lParam, *) {
+; Show the root menu, or close everything if a menu is already open
+ToggleMenu() {
     global isMenuVisible, folderPath
 
+    if (isMenuVisible)
+        CloseAllMenus()
+    else
+        ShowFolderContents(folderPath, 1)
+}
+
+; Handle tray icon click
+TrayIconClick(wParam, lParam, *) {
     if (lParam = 0x201)  ; WM_LBUTTONDOWN
-    {
-        if (isMenuVisible) {
-            CloseAllMenus()
-        } else {
-            ShowFolderContents(folderPath, 1)
-        }
-    }
+        ToggleMenu()
     else if (lParam = 0x203)  ; WM_LBUTTONDBLCLK
-    {
         OpenRootFolder()
-    }
 }
 
 ; Define a hotkey to force show the menu
-#f::  ; Win+F hotkey
-{
-    global isMenuVisible, folderPath
-
-    if (isMenuVisible) {
-        CloseAllMenus()
-    } else {
-        ShowFolderContents(folderPath, 1)
-    }
-}
+#f::ToggleMenu()  ; Win+F hotkey
 
 ; End of script

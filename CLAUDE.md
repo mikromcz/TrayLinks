@@ -11,51 +11,54 @@ TrayLinks is a modern AutoHotkey v2.0 script that creates a sophisticated system
 ### Main Script Structure (TrayLinks.ahk)
 The script follows a functional architecture with these key components:
 
-1. **Configuration Management** (`TrayLinks.ahk:10-160`)
+1. **Configuration Management** (`TrayLinks.ahk:18-168`)
    - INI file handling with automatic creation of default config
    - Environment variable expansion via `ExpandPath()` using WScript.Shell COM
    - Custom INI parser (`ParseIniValue()`) for Unicode support
    - `DefaultConfig()` fallback for error cases
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **Windows 11 GUI System** (`TrayLinks.ahk:200-290`)
+2. **Windows 11 GUI System** (`TrayLinks.ahk:207-307`)
    - `darkColors` / `lightColors` objects with authentic Windows 11 color schemes
    - `ApplyWindows11Styling()` for DWM API rounded corners and drop shadows
    - `fileIconMap` Map-based lookup for 30+ file extension-to-icon mappings
    - `GetColors()` theme selector based on config
 
-3. **Helper Functions** (`TrayLinks.ahk:292-400`)
+3. **Helper Functions** (`TrayLinks.ahk:309-372`)
    - `IsTrayWindow()` - checks if a window belongs to the system tray area
    - `DefaultConfig()` - centralized fallback configuration
    - `CalculateMenuHeight()` - dynamic window height calculation
    - `ScanFolder()` - scans directory returning `{folders, files}` arrays
    - `CalculateMenuPosition()` - calculates cascading menu position with screen bounds clamping
 
-4. **Event Handling** (`TrayLinks.ahk:434-575`)
+4. **Event Handling** (`TrayLinks.ahk:409-631`)
    - `ItemClick()` - single-click navigation for folders with consistent submenu closing
    - `ItemDoubleClick()` - opens files/shortcuts
    - `ItemContextMenu()` - right-click context menu with file operations
    - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties
-   - Tooltip monitoring system (`CheckForTooltips()`) for long filenames (>24 chars)
+   - Tooltip monitoring (`CheckForTooltips()`) split into `HoveredItem()` hit-testing,
+     `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`
 
-5. **Menu Management** (`TrayLinks.ahk:403-435`)
+5. **Menu Management** (`TrayLinks.ahk:375-407`)
    - `CloseAllMenus()` - destroys all GUIs and resets state
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:725-910`)
+6. **Menu Creation** (`TrayLinks.ahk:686-789`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:832-920`)
+7. **Global Click Detection** (`TrayLinks.ahk:792-873`)
    - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
-   - `OnGlobalMouseClick()` - backup WM_LBUTTONUP handler
-   - Both use `IsTrayWindow()` to avoid closing when clicking tray area
+   - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
+     open, so the script stays out of the global mouse path while idle
+   - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:927-955`)
+8. **Entry Points** (`TrayLinks.ahk:879-897`)
+   - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
 
@@ -100,21 +103,21 @@ TrayLinks/
 
 ### Configuration Testing
 - Modify `TrayLinks.ini` to test different paths and settings
-- Use the "Reload Script" option from tray menu after config changes
+- Restart the script after config changes (there is no in-app reload)
 - Test environment variable expansion with various Windows env vars
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:725`) - Core menu creation with Windows 11 styling
-2. **ApplyWindows11Styling()** (`TrayLinks.ahk:235`) - DWM API integration for modern appearance
-3. **GetFileIcon()** (`TrayLinks.ahk:286`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:668`) - Directory scanning returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:694`) - Cascading menu positioning with screen bounds
-6. **CalculateMenuHeight()** (`TrayLinks.ahk:379`) - Dynamic height calculation for consistent padding
-7. **ReadConfig()** (`TrayLinks.ahk:105`) - INI parsing with DarkMode support
-8. **ReloadScript()** (`TrayLinks.ahk:353`) - Clean resource management during reload
-9. **IsTrayWindow()** (`TrayLinks.ahk:293`) - Tray area window detection helper
-10. **DefaultConfig()** (`TrayLinks.ahk:305`) - Centralized fallback configuration
+1. **ShowFolderContents()** (`TrayLinks.ahk:686`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:253`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:304`) - Map-based file type icon lookup
+4. **ScanFolder()** (`TrayLinks.ahk:635`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:657`) - Cascading menu positioning with screen bounds
+6. **CalculateMenuHeight()** (`TrayLinks.ahk:358`) - Dynamic height calculation for consistent padding
+7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:842`) - Mouse hook lifecycle
+9. **IsTrayWindow()** (`TrayLinks.ahk:310`) - Tray area window detection helper
+10. **DefaultConfig()** (`TrayLinks.ahk:322`) - Centralized fallback configuration
 
 ## User Interface Guidelines
 
@@ -158,7 +161,7 @@ Configuration errors show user-friendly dialogs with options to edit the INI fil
 - **Icon System**: 30+ contextual file type icons via `fileIconMap` Map lookup
 
 ### Resource Management
-- **Clean Shutdown**: Proper mouse hook cleanup in `ExitScript()` and `ReloadScript()`
+- **Clean Shutdown**: Mouse hook removed in `CloseAllMenus()` and on `OnExit`
 - **Memory Efficiency**: Automatic GUI resource cleanup when menus close
 - **Performance**: Optimized Windows API calls and minimal resource usage
 
@@ -180,7 +183,7 @@ When modifying the script:
 3. **Environment Testing**: Verify environment variable expansion across different Windows setups
 4. **Screen Testing**: Test menu positioning on multi-monitor setups and different DPI settings
 5. **Resource Testing**: Verify proper cleanup of GUI resources, mouse hooks, and DWM styling
-6. **Theme Testing**: Test theme switching and reload functionality
+6. **Theme Testing**: Test theme switching by editing the INI and restarting
 7. **Icon Testing**: Verify contextual file type icons display correctly for various file types
 8. **Race Condition Testing**: Rapidly click to test GUI destruction timing safety
 
@@ -190,7 +193,9 @@ When modifying the script:
 - **Spacing**: Maintain 8px base padding unit for consistency
 - **Typography**: Use Segoe UI Variable with appropriate font weights
 - **Error Handling**: Always wrap Windows API calls and GUI handle access in try-catch blocks
-- **Resource Cleanup**: Ensure proper cleanup in exit and reload functions
+- **Resource Cleanup**: Ensure proper cleanup on exit and whenever menus close
 - **ListView Management**: Use two-column approach for padding control
 - **Icon Mapping**: Add new file types to the `fileIconMap` Map, not as if-chains
 - **Helper Extraction**: Keep `ShowFolderContents()` lean by delegating to helpers like `ScanFolder()` and `CalculateMenuPosition()`
+- **Magic Numbers**: Put layout values in the `MENU_*` constants near the top, not inline - `MENU_ROW_HEIGHT` in particular is shared by window sizing and tooltip hit-testing
+- **Version**: Update both the JSDoc `@version` header and the `SCRIPT_VERSION` constant
