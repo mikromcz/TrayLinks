@@ -18,20 +18,20 @@ The script follows a functional architecture with these key components:
    - `DefaultConfig()` fallback for error cases
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **Windows 11 GUI System** (`TrayLinks.ahk:207-307`)
+2. **Windows 11 GUI System** (`TrayLinks.ahk:207-311`)
    - `darkColors` / `lightColors` objects with authentic Windows 11 color schemes
    - `ApplyWindows11Styling()` for DWM API rounded corners and drop shadows
    - `fileIconMap` Map-based lookup for 30+ file extension-to-icon mappings
    - `GetColors()` theme selector based on config
 
-3. **Helper Functions** (`TrayLinks.ahk:309-372`)
+3. **Helper Functions** (`TrayLinks.ahk:313-378`)
    - `IsTrayWindow()` - checks if a window belongs to the system tray area
    - `DefaultConfig()` - centralized fallback configuration
    - `CalculateMenuHeight()` - dynamic window height calculation
    - `ScanFolder()` - scans directory returning `{folders, files}` arrays
    - `CalculateMenuPosition()` - calculates cascading menu position with screen bounds clamping
 
-4. **Event Handling** (`TrayLinks.ahk:409-631`)
+4. **Event Handling** (`TrayLinks.ahk:415-637`)
    - `ItemClick()` - single-click navigation for folders with consistent submenu closing
    - `ItemDoubleClick()` - opens files/shortcuts
    - `ItemContextMenu()` - right-click context menu with file operations
@@ -39,25 +39,25 @@ The script follows a functional architecture with these key components:
    - Tooltip monitoring (`CheckForTooltips()`) split into `HoveredItem()` hit-testing,
      `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`
 
-5. **Menu Management** (`TrayLinks.ahk:375-407`)
+5. **Menu Management** (`TrayLinks.ahk:381-413`)
    - `CloseAllMenus()` - destroys all GUIs and resets state
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:686-789`)
+6. **Menu Creation** (`TrayLinks.ahk:692-801`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:792-873`)
+7. **Global Click Detection** (`TrayLinks.ahk:804-885`)
    - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
    - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
      open, so the script stays out of the global mouse path while idle
    - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:879-897`)
+8. **Entry Points** (`TrayLinks.ahk:891-909`)
    - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
@@ -108,16 +108,16 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:686`) - Core menu creation with Windows 11 styling
-2. **ApplyWindows11Styling()** (`TrayLinks.ahk:253`) - DWM API integration for modern appearance
-3. **GetFileIcon()** (`TrayLinks.ahk:304`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:635`) - Single-pass directory scan returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:657`) - Cascading menu positioning with screen bounds
-6. **CalculateMenuHeight()** (`TrayLinks.ahk:358`) - Dynamic height calculation for consistent padding
+1. **ShowFolderContents()** (`TrayLinks.ahk:692`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:257`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:308`) - Map-based file type icon lookup
+4. **ScanFolder()** (`TrayLinks.ahk:641`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:663`) - Cascading menu positioning with screen bounds
+6. **CalculateMenuHeight()** (`TrayLinks.ahk:362`) - Dynamic height calculation for consistent padding
 7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
-8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:842`) - Mouse hook lifecycle
-9. **IsTrayWindow()** (`TrayLinks.ahk:310`) - Tray area window detection helper
-10. **DefaultConfig()** (`TrayLinks.ahk:322`) - Centralized fallback configuration
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:854`) - Mouse hook lifecycle
+9. **IsTrayWindow()** (`TrayLinks.ahk:314`) - Tray area window detection helper
+10. **DefaultConfig()** (`TrayLinks.ahk:326`) - Centralized fallback configuration
 
 ## User Interface Guidelines
 
@@ -156,6 +156,7 @@ Configuration errors show user-friendly dialogs with options to edit the INI fil
 
 ### ListView Optimization
 - **Two-Column Workaround**: First column with 0 width for precise left padding control
+- **Borderless**: `-Border -E0x200` drops the client edge so the ListView blends into the window
 - **Scrollbar Management**: Horizontal scrollbar hidden via `ShowScrollBar` API after render
 - **Dynamic Sizing**: Row-count-based ListView with calculated window height
 - **Icon System**: 30+ contextual file type icons via `fileIconMap` Map lookup
@@ -197,5 +198,5 @@ When modifying the script:
 - **ListView Management**: Use two-column approach for padding control
 - **Icon Mapping**: Add new file types to the `fileIconMap` Map, not as if-chains
 - **Helper Extraction**: Keep `ShowFolderContents()` lean by delegating to helpers like `ScanFolder()` and `CalculateMenuPosition()`
-- **Magic Numbers**: Put layout values in the `MENU_*` constants near the top, not inline - `MENU_ROW_HEIGHT` in particular is shared by window sizing and tooltip hit-testing
+- **Magic Numbers**: Put layout values in the `MENU_*` constants near the top, not inline. `MENU_PADDING` drives left/right spacing and the ListView width; `MENU_LIST_TOP` and `MENU_BOTTOM_PADDING` drive the vertical gaps; `MENU_ROW_HEIGHT` is shared by window sizing and tooltip hit-testing
 - **Version**: Update both the JSDoc `@version` header and the `SCRIPT_VERSION` constant

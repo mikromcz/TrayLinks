@@ -210,12 +210,16 @@ global isMenuVisible := false
 global mouseHook := 0            ; Low-level mouse hook handle (0 = not installed)
 global mouseHookCallback := 0    ; Callback address, created once at startup
 
-; Menu layout metrics (Windows 11 spacing, 8px base unit)
+; Menu layout metrics (Windows 11 spacing)
+; Horizontal layout:  |<- PADDING ->|<- ListView ->|<- PADDING ->|
+; Vertical layout:    |<- LIST_TOP ->|<- ListView ->|<- BOTTOM_PADDING ->|
 global MENU_WIDTH := 200         ; Menu window width
+global MENU_PADDING := 5         ; Gap between the window edge and the ListView (left/right)
+global MENU_TITLE_INDENT := 4    ; Extra title indent, to line the title up with the item text
+global MENU_LIST_TOP := 36       ; Y position of the ListView = height of the title area
 global MENU_ROW_HEIGHT := 20     ; ListView row height - used for sizing and hit-testing
 global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolling
-global MENU_TITLE_HEIGHT := 40   ; Title area above the ListView
-global MENU_BOTTOM_PADDING := 12 ; Padding below the ListView
+global MENU_BOTTOM_PADDING := 12 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
 ; Windows 11 Fluent Design color schemes
@@ -356,9 +360,11 @@ ExitScript(*) {
 
 ; Calculate dynamic height for a menu window with consistent padding
 CalculateMenuHeight(listViewHeight) {
-    ; Total window height = title area + ListView height + bottom padding
-    ; MENU_MAX_ROWS caps listViewHeight, so no extra clamp is needed here
-    return MENU_TITLE_HEIGHT + listViewHeight + MENU_BOTTOM_PADDING
+    ; Total window height = title area + ListView height + bottom padding.
+    ; MENU_LIST_TOP is where the ListView actually starts, so MENU_BOTTOM_PADDING
+    ; is exactly the gap you see below it. MENU_MAX_ROWS caps listViewHeight,
+    ; so no extra clamp is needed here.
+    return MENU_LIST_TOP + listViewHeight + MENU_BOTTOM_PADDING
 }
 
 ; Function to handle opening the root folder
@@ -704,7 +710,9 @@ ShowFolderContents(folderToShow, level := 1) {
         folderName := "Links"
 
     ; Add title with modern spacing and clean Windows 11 styling
-    titleText := menuGui.Add("Text", "x16 y12 w172 c" colors.text, folderName)
+    titleX := MENU_PADDING + MENU_TITLE_INDENT
+    titleWidth := MENU_WIDTH - titleX - MENU_PADDING
+    titleText := menuGui.Add("Text", "x" titleX " y12 w" titleWidth " c" colors.text, folderName)
     titleText.SetFont("s10 w600")  ; Semi-bold for title
 
     ; Scan folder contents
@@ -723,12 +731,16 @@ ShowFolderContents(folderToShow, level := 1) {
     displayRows := Min(numItems, MENU_MAX_ROWS)
     needsScrollbar := numItems > MENU_MAX_ROWS
 
-    ; Create ListView with row count
-    listView := menuGui.Add("ListView", "x12 y36 w176 r" displayRows " -Multi -Hdr Background" colors.backgroundCard " c" colors.text, ["", "Name"])
+    ; Create ListView with row count - borderless so it blends into the window:
+    ; -E0x200 drops WS_EX_CLIENTEDGE (the light gray frame), -Border drops WS_BORDER
+    listViewWidth := MENU_WIDTH - (MENU_PADDING * 2)
+    listViewOpts := "x" MENU_PADDING " y" MENU_LIST_TOP " w" listViewWidth " r" displayRows
+    listViewOpts .= " -Multi -Hdr -Border -E0x200 Background" colors.backgroundCard " c" colors.text
+    listView := menuGui.Add("ListView", listViewOpts, ["", "Name"])
 
     ; Set column widths first: first column 0px (invisible), second column full width for proper selection
-    listView.ModifyCol(1, 0)      ; First column width = 0 (hidden)
-    listView.ModifyCol(2, 172)    ; Second column matches ListView width for full-width selection
+    listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
+    listView.ModifyCol(2, listViewWidth - 4)    ; Second column fills the rest for full-width selection
 
     ; Add event handlers for click, double-click, and right-click
     listView.OnEvent("Click", ItemClick.Bind(level))
