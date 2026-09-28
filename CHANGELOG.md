@@ -5,6 +5,37 @@ All notable changes to TrayLinks are documented in this file.
 This file starts at 3.5.0. Earlier releases carried no release notes beyond their
 version number, so see the git history for those.
 
+## [Unreleased]
+
+### Fixed
+
+- Tooltips showed the wrong filename once a long list was scrolled — they counted
+  visible rows rather than items. The same arithmetic also drifted at any display
+  scaling other than 100%, and where menus overlapped, the one underneath could
+  claim the hover
+- Hidden and system files appeared in menus, despite the README saying they are
+  filtered — most visibly Office's `~$` lock files while a document is open
+- A single invalid INI value (say `MaxLevels=abc`) threw away the whole file,
+  including a valid `FolderPath`, which usually ended in a "folder does not exist"
+  error. Each setting now falls back on its own
+- `MaxLevels` outside 1–5 is clamped as documented; `0` stopped menus from closing
+- A missing `IconIndex` fell back to `4` rather than the documented `205`
+- Menus were clamped to the primary screen and could sit over the taskbar; they now
+  stay inside the work area of the monitor under the mouse. Win+F on a second
+  monitor no longer throws the menu onto the primary one
+- Submenu placement mixed scaled and unscaled pixels, so on a scaled display
+  submenus overlapped their parent (no change at 100% scaling)
+- "Properties" failures went unreported: the error check never fired, and its
+  fallback opened the "Open with" dialog rather than Properties
+- The border fallback for Windows 10 never applied, leaving menus unoutlined
+- The DWM border colour was passed as RGB where Windows expects BGR. Invisible with
+  the current greys, but any non-grey `borderAccent` would have had red and blue swapped
+
+### Changed
+
+- The DarkMode fallback now matches the INI that new installs get (dark), instead
+  of three different places disagreeing about the default
+
 ## [3.5.0] - 2026-09-28
 
 The same changes shipped as 3.4.0 on 2026-09-22; the two were reconciled into
