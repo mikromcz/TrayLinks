@@ -7,6 +7,19 @@ version number, so see the git history for those.
 
 ## [Unreleased]
 
+### ⚠️ Upgrade note
+
+Light mode is now the default. This only affects an INI with no `DarkMode` line,
+or a freshly generated one — an existing `DarkMode=true` keeps working as before.
+
+### Added
+
+- **Esc** closes all menus. The README already listed it; it was never wired up
+- Right- and middle-clicks outside the menus close them too, not just left-clicks
+- Empty folders show a greyed "(Empty)" label instead of a blank row
+- Clicking a folder at the deepest menu level opens it in Explorer, where it
+  previously did nothing
+
 ### Fixed
 
 - Tooltips showed the wrong filename once a long list was scrolled — they counted
@@ -33,8 +46,14 @@ version number, so see the git history for those.
 
 ### Changed
 
-- The DarkMode fallback now matches the INI that new installs get (dark), instead
-  of three different places disagreeing about the default
+- Light mode is the default everywhere. New INIs are generated with
+  `DarkMode=false`, and a missing value falls back to light — previously a fresh
+  INI turned dark mode on while the fallbacks said light
+
+### Removed
+
+- Unused colour values (`background`, `border`, `selected`, `selectedHover`,
+  `shadow`) from both themes. Each palette now holds only the colours it paints
 
 ## [3.5.0] - 2026-09-28
 

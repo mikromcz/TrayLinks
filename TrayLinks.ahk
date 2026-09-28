@@ -48,7 +48,7 @@ FolderPath=%OneDrive%\Links
 
 ; Dark mode setting (true/false or 1/0)
 ; true = Dark mode, false = Light mode
-DarkMode=true
+DarkMode=false
 
 [Advanced]
 ; Icon index from imageres.dll (optional)
@@ -238,27 +238,17 @@ global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than thi
 
 ; Windows 11 Fluent Design color schemes
 global darkColors := {
-    background: "2D2D2D",      ; Windows 11 dark background
-    backgroundCard: "3C3C3C",  ; Card/elevated surface
-    text: "FFFFFF",
-    textSecondary: "C5C5C5",   ; Secondary text
-    border: "484848",          ; Subtle border
-    borderAccent: "5A5A5A",    ; Accent border
-    selected: "005FB8",        ; Windows 11 accent blue
-    selectedHover: "0078D4",   ; Hover state
-    shadow: "000000"
+    backgroundCard: "3C3C3C",  ; Menu surface (window and ListView)
+    text: "FFFFFF",            ; Title and item text
+    textSecondary: "C5C5C5",   ; Muted text - the "(Empty)" label
+    borderAccent: "5A5A5A"     ; DWM window border
 }
 
 global lightColors := {
-    background: "F9F9F9",      ; Windows 11 light background (slightly off-white)
-    backgroundCard: "FFFFFF",  ; Card/elevated surface
-    text: "000000",
-    textSecondary: "605E5C",   ; Secondary text
-    border: "E1DFDD",          ; Subtle border
-    borderAccent: "D1D1D1",    ; Accent border
-    selected: "005FB8",        ; Windows 11 accent blue
-    selectedHover: "0078D4",   ; Hover state
-    shadow: "00000020"         ; Light shadow with transparency
+    backgroundCard: "FFFFFF",  ; Menu surface (window and ListView)
+    text: "000000",            ; Title and item text
+    textSecondary: "605E5C",   ; Muted text - the "(Empty)" label
+    borderAccent: "D1D1D1"     ; DWM window border
 }
 
 ; Function to get current color scheme based on config
@@ -349,7 +339,7 @@ DefaultConfig() {
         folderPath: EnvGet("OneDrive") . "\Links",
         iconIndex: 205,
         maxLevels: 3,
-        darkMode: true
+        darkMode: false
     }
 }
 
@@ -447,12 +437,13 @@ ItemClick(level, ctrl, *) {
     ; Close deeper level menus regardless of item type
     CloseMenusAtLevel(level + 1)
 
-    ; For folders, navigate into the folder
+    ; Folders open as a submenu one level deeper. At the deepest level there is
+    ; no room for another menu, so the folder opens in Explorer instead.
     if (item.type = "folder") {
-        if (level >= config.maxLevels)
-            return
-
-        ShowFolderContents(item.path, level + 1)
+        if (level < config.maxLevels)
+            ShowFolderContents(item.path, level + 1)
+        else
+            OpenItem(item)
     }
 }
 
@@ -467,14 +458,17 @@ ItemDoubleClick(ctrl, *) {
     item := ctrl.itemData[rowNum]
 
     ; Only process for non-folder items (files/shortcuts)
-    if (item.type != "folder") {
-        ; It's a file or shortcut - open it and close all menus
-        try {
-            Run(item.path)
-            CloseAllMenus()
-        } catch as e {
-            MsgBox("Error opening file: " e.Message, "Error", "Icon!")
-        }
+    if (item.type != "folder")
+        OpenItem(item)
+}
+
+; Open a file, shortcut or folder with its default handler, then close the menus
+OpenItem(item) {
+    try {
+        Run(item.path)
+        CloseAllMenus()
+    } catch as e {
+        MsgBox("Error opening " . item.name . ": " . e.Message, "Error", "Icon!")
     }
 }
 
@@ -620,7 +614,7 @@ CheckForTooltips() {
 
     for level, gui in currentGuis {
         try {
-            if (gui.listView.Hwnd != ctrlHwnd)
+            if (!IsObject(gui.listView) || gui.listView.Hwnd != ctrlHwnd)
                 continue
         } catch {
             ; Ignore errors with destroyed windows - just skip this GUI
@@ -788,6 +782,63 @@ GetWorkAreaAt(x, y) {
     return { left: left, top: top, right: right, bottom: bottom }
 }
 
+; Add the ListView of a folder's contents, folders first, and attach it to the
+; menu as menuGui.listView
+AddItemList(menuGui, level, scanned, displayRows, colors) {
+    ; Create ListView with row count - borderless so it blends into the window:
+    ; -E0x200 drops WS_EX_CLIENTEDGE (the light gray frame), -Border drops WS_BORDER
+    listViewWidth := MENU_WIDTH - (MENU_PADDING * 2)
+    listViewOpts := "x" MENU_PADDING " y" MENU_LIST_TOP " w" listViewWidth " r" displayRows
+    listViewOpts .= " -Multi -Hdr -Border -E0x200 Background" colors.backgroundCard " c" colors.text
+    listView := menuGui.Add("ListView", listViewOpts, ["", "Name"])
+
+    ; Set column widths first: first column 0px (invisible), second column full width for proper selection
+    listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
+    listView.ModifyCol(2, listViewWidth)        ; Second column fills the rest for full-width selection
+
+    ; Add event handlers for click, double-click, and right-click
+    listView.OnEvent("Click", ItemClick.Bind(level))
+    listView.OnEvent("DoubleClick", ItemDoubleClick)
+    listView.OnEvent("ContextMenu", ItemContextMenu)
+
+    ; Add items to the ListView (folders first) - row order matches itemData order
+    listItems := []
+
+    ; Add folders with Windows 11 style icons - using second column
+    for folder in scanned.folders {
+        listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
+        listItems.Push(folder)
+    }
+
+    ; Add files - hide all extensions with modern icons - using second column
+    for file in scanned.files {
+        ; Split filename to remove extension
+        SplitPath(file.name, , , &ext, &nameNoExt)
+
+        ; Choose icon based on file type (Windows 11 style)
+        listView.Add("", "", GetFileIcon(ext) . " " nameNoExt)  ; Empty first column, data in second
+        listItems.Push(file)
+    }
+
+    ; Store items data with the ListView, and the ListView with its GUI
+    listView.itemData := listItems
+    menuGui.listView := listView
+}
+
+; Stand-in for the ListView when a folder has nothing to show: a greyed label
+; where the first row would be, indented like the title so it lines up with
+; where item text would start. +0x200 (SS_CENTERIMAGE) centres it in the row.
+AddEmptyLabel(menuGui, colors) {
+    labelX := MENU_PADDING + MENU_TITLE_INDENT
+    labelWidth := MENU_WIDTH - labelX - MENU_PADDING
+    labelOpts := "x" labelX " y" MENU_LIST_TOP " w" labelWidth " h" MENU_ROW_HEIGHT
+    labelOpts .= " +0x200 c" colors.textSecondary
+    menuGui.Add("Text", labelOpts, "(Empty)")
+
+    ; No ListView here, so tooltip tracking has nothing to hit-test
+    menuGui.listView := ""
+}
+
 ; Create and show folder contents for a given level
 ShowFolderContents(folderToShow, level := 1) {
     global currentGuis, isMenuVisible, folderPath
@@ -817,58 +868,17 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Scan folder contents
     scanned := ScanFolder(folderToShow)
-    folders := scanned.folders
-    files := scanned.files
+    numItems := scanned.folders.Length + scanned.files.Length
 
-    ; Calculate the number of items for listview sizing
-    numItems := folders.Length + files.Length
-
-    ; Ensure at least 1 item height to avoid empty listview
-    if (numItems < 1)
-        numItems := 1
-
-    ; Cap the visible rows - anything beyond that scrolls
-    displayRows := Min(numItems, MENU_MAX_ROWS)
+    ; Cap the visible rows - anything beyond that scrolls. An empty folder still
+    ; takes one row, for its "(Empty)" label.
+    displayRows := Max(1, Min(numItems, MENU_MAX_ROWS))
     needsScrollbar := numItems > MENU_MAX_ROWS
 
-    ; Create ListView with row count - borderless so it blends into the window:
-    ; -E0x200 drops WS_EX_CLIENTEDGE (the light gray frame), -Border drops WS_BORDER
-    listViewWidth := MENU_WIDTH - (MENU_PADDING * 2)
-    listViewOpts := "x" MENU_PADDING " y" MENU_LIST_TOP " w" listViewWidth " r" displayRows
-    listViewOpts .= " -Multi -Hdr -Border -E0x200 Background" colors.backgroundCard " c" colors.text
-    listView := menuGui.Add("ListView", listViewOpts, ["", "Name"])
-
-    ; Set column widths first: first column 0px (invisible), second column full width for proper selection
-    listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
-    listView.ModifyCol(2, listViewWidth)        ; Second column fills the rest for full-width selection
-
-    ; Add event handlers for click, double-click, and right-click
-    listView.OnEvent("Click", ItemClick.Bind(level))
-    listView.OnEvent("DoubleClick", ItemDoubleClick)
-    listView.OnEvent("ContextMenu", ItemContextMenu)
-
-    ; Add items to the ListView (folders first) - row order matches itemData order
-    listItems := []
-
-    ; Add folders with Windows 11 style icons - using second column
-    for folder in folders {
-        listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
-        listItems.Push(folder)
-    }
-
-    ; Add files - hide all extensions with modern icons - using second column
-    for file in files {
-        ; Split filename to remove extension
-        SplitPath(file.name, , , &ext, &nameNoExt)
-
-        ; Choose icon based on file type (Windows 11 style)
-        listView.Add("", "", GetFileIcon(ext) . " " nameNoExt)  ; Empty first column, data in second
-        listItems.Push(file)
-    }
-
-    ; Store items data with the ListView, and the ListView with its GUI
-    listView.itemData := listItems
-    menuGui.listView := listView
+    if (numItems = 0)
+        AddEmptyLabel(menuGui, colors)
+    else
+        AddItemList(menuGui, level, scanned, displayRows, colors)
 
     ; Calculate equivalent height for window sizing
     menuHeight := CalculateMenuHeight(displayRows * MENU_ROW_HEIGHT)
@@ -888,7 +898,7 @@ ShowFolderContents(folderToShow, level := 1) {
         ; Small delay to ensure ListView is fully rendered
         Sleep(20)
         ; Large folders: hide only horizontal scrollbar, keep vertical
-        DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; SB_HORZ, hide
+        DllCall("user32.dll\ShowScrollBar", "Ptr", menuGui.listView.Hwnd, "Int", 0, "Int", 0)  ; SB_HORZ, hide
     }
 
     ; Store the GUI for this level
@@ -904,8 +914,10 @@ ShowFolderContents(folderToShow, level := 1) {
 LowLevelMouseProc(nCode, wParam, lParam) {
     global isMenuVisible, currentGuis
 
-    ; Only process if menus are visible and it's a left button up
-    if (nCode >= 0 && isMenuVisible && wParam = 0x202) {  ; WM_LBUTTONUP
+    ; Only process if menus are visible and a button was released - left, right
+    ; or middle, since any click outside a native menu dismisses it
+    ; (WM_LBUTTONUP 0x202, WM_RBUTTONUP 0x205, WM_MBUTTONUP 0x208)
+    if (nCode >= 0 && isMenuVisible && (wParam = 0x202 || wParam = 0x205 || wParam = 0x208)) {
         ; Get mouse position from the hook data (MSLLHOOKSTRUCT starts with a POINT)
         mouseX := NumGet(lParam, 0, "Int")  ; x coordinate
         mouseY := NumGet(lParam, 4, "Int")  ; y coordinate
@@ -1007,5 +1019,13 @@ TrayIconClick(wParam, lParam, *) {
 
 ; Define a hotkey to force show the menu
 #f::ToggleMenu()  ; Win+F hotkey
+
+; Esc closes the menus. They never take keyboard focus (shown NoActivate), so
+; this has to be a hotkey. It only exists while a menu is open, so Esc reaches
+; other apps normally the rest of the time - and it stands aside while a popup
+; menu (#32768) is up, so Esc closes just the right-click menu first.
+#HotIf isMenuVisible && !WinExist("ahk_class #32768")
+Esc::CloseAllMenus()
+#HotIf
 
 ; End of script

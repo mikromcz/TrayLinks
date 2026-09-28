@@ -11,7 +11,7 @@ TrayLinks is a modern AutoHotkey v2.0 script that creates a sophisticated system
 ### Main Script Structure (TrayLinks.ahk)
 The script follows a functional architecture with these key components:
 
-1. **Configuration Management** (`TrayLinks.ahk:18-181`)
+1. **Configuration Management** (`TrayLinks.ahk:18-167`)
    - INI file handling with automatic creation of default config
    - Environment variable expansion via `ExpandPath()` using WScript.Shell COM
    - Custom INI parser (`ParseIniValue()`) for Unicode support
@@ -20,13 +20,13 @@ The script follows a functional architecture with these key components:
      the rest of the file. MaxLevels is clamped to 1-5
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **Windows 11 GUI System** (`TrayLinks.ahk:220-333`)
+2. **Windows 11 GUI System** (`TrayLinks.ahk:220-322`)
    - `darkColors` / `lightColors` objects with authentic Windows 11 color schemes
    - `ApplyWindows11Styling()` for DWM API rounded corners and drop shadows
    - `fileIconMap` Map-based lookup for 30+ file extension-to-icon mappings
    - `GetColors()` theme selector based on config
 
-3. **Helper Functions** (`TrayLinks.ahk:335-399`)
+3. **Helper Functions** (`TrayLinks.ahk:325-379`)
    - `IsTrayWindow()` - checks if a window belongs to the system tray area
    - `DefaultConfig()` - centralized fallback configuration
    - `CalculateMenuHeight()` - dynamic window height calculation
@@ -36,9 +36,11 @@ The script follows a functional architecture with these key components:
      on the right monitor. Converts the menu's logical size to screen pixels first,
      since `Gui.Show` DPI-scales w/h but not x/y
 
-4. **Event Handling** (`TrayLinks.ahk:436-704`)
-   - `ItemClick()` - single-click navigation for folders with consistent submenu closing
+4. **Event Handling** (`TrayLinks.ahk:426-698`)
+   - `ItemClick()` - single-click navigation for folders with consistent submenu closing;
+     at `maxLevels` there is no room for another menu, so the folder opens in Explorer
    - `ItemDoubleClick()` - opens files/shortcuts
+   - `OpenItem()` - shared Run-then-close for files, shortcuts and max-depth folders
    - `ItemContextMenu()` - right-click context menu with file operations
    - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties
    - `SetMenuItemIcon()` - `Menu.SetIcon()` per item from `ICON_FILE`, so icons sit in the gutter
@@ -52,28 +54,35 @@ The script follows a functional architecture with these key components:
      it via `LVM_SUBITEMHITTEST`. Do not go back to dividing by a row height - that
      counts visible rows, not items, so it breaks on scrolled lists and at DPI scaling
 
-5. **Menu Management** (`TrayLinks.ahk:402-434`)
+5. **Menu Management** (`TrayLinks.ahk:392-423`)
    - `CloseAllMenus()` - destroys all GUIs and resets state
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:792-901`)
+6. **Menu Creation** (`TrayLinks.ahk:787-911`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
+   - `AddItemList()` builds and fills the ListView; `AddEmptyLabel()` stands in for it
+     when a folder has nothing to show. An empty menu has `menuGui.listView := ""`,
+     so anything reading `.listView` must check `IsObject()` first
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:904-985`)
-   - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
+7. **Global Click Detection** (`TrayLinks.ahk:914-997`)
+   - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection.
+     Reacts to left, right and middle button-up, as native menus do
    - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
      open, so the script stays out of the global mouse path while idle
    - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:991-1009`)
+8. **Entry Points** (`TrayLinks.ahk:1003-1030`)
    - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
+   - `Esc` hotkey - closes all menus. Needed because the menus are shown `NoActivate`
+     and never get keyboard focus. Scoped with `#HotIf` to while a menu is open and no
+     popup menu (`#32768`) is up, so Esc otherwise reaches other apps untouched
 
 ### Configuration System
 - **Primary Config**: `TrayLinks.ini` (auto-generated if missing)
@@ -86,9 +95,14 @@ menus (tray and item context) are standard Win32 menus painted by Windows, so
 they follow `EnableDarkMenus()` instead - see the dark mode note under Windows
 API Integration.
 
-Two authentic Windows 11 themes controlled by DarkMode setting:
-- **Dark Mode**: `#2D2D2D` background, `#3C3C3C` elevated surfaces, `#005FB8` accent
-- **Light Mode**: `#F9F9F9` background, white elevated surfaces, `#005FB8` accent
+Two Windows 11 themes controlled by the DarkMode setting. Light is the default:
+the generated INI says `DarkMode=false` and a missing value falls back to light.
+- **Light Mode**: white `#FFFFFF` surface, black text, `#D1D1D1` border
+- **Dark Mode**: `#3C3C3C` surface, white text, `#5A5A5A` border
+- `textSecondary` (muted text) is used by the "(Empty)" label
+
+Each palette holds only the four keys that are actually painted. Add a key when
+something reads it, not before.
 - **Typography**: Segoe UI Variable font with semi-bold titles and proper hierarchy
 
 ## Development Environment
@@ -127,16 +141,16 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:792`) - Core menu creation with Windows 11 styling
-2. **ApplyWindows11Styling()** (`TrayLinks.ahk:271`) - DWM API integration for modern appearance
-3. **GetFileIcon()** (`TrayLinks.ahk:329`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:708`) - Single-pass directory scan returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:737`) - Cascading menu positioning with screen bounds
-6. **CalculateMenuHeight()** (`TrayLinks.ahk:383`) - Dynamic height calculation for consistent padding
+1. **ShowFolderContents()** (`TrayLinks.ahk:843`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:261`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:319`) - Map-based file type icon lookup
+4. **ScanFolder()** (`TrayLinks.ahk:702`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:731`) - Cascading menu positioning with screen bounds
+6. **CalculateMenuHeight()** (`TrayLinks.ahk:373`) - Dynamic height calculation for consistent padding
 7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
-8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:954`) - Mouse hook lifecycle
-9. **IsTrayWindow()** (`TrayLinks.ahk:335`) - Tray area window detection helper
-10. **DefaultConfig()** (`TrayLinks.ahk:347`) - Centralized fallback configuration
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:966`) - Mouse hook lifecycle
+9. **IsTrayWindow()** (`TrayLinks.ahk:325`) - Tray area window detection helper
+10. **DefaultConfig()** (`TrayLinks.ahk:337`) - Centralized fallback configuration
 
 ## User Interface Guidelines
 
@@ -145,6 +159,7 @@ TrayLinks/
 - Level 1 appears at mouse cursor position
 - Subsequent levels position to the left of previous level
 - Auto-positioning keeps menus inside the work area of the monitor under the mouse
+- Esc, or any mouse button clicked outside the menus, closes them all
 
 ### File Display Rules
 - Folders show first with 🗂️ icon (modern file folder)
@@ -152,6 +167,7 @@ TrayLinks/
 - File extensions are hidden in display for cleaner appearance
 - Hidden items, system files, desktop.ini and dot-files are filtered out. The system
   check is files-only: Windows can mark a folder system just to give it a custom icon
+- An empty folder shows a greyed "(Empty)" label instead of a blank row
 - Two-column ListView provides precise left padding control
 - Tooltips display full filenames for items longer than 24 characters
 - Right-click context menu provides file operations (Open Location, Copy Path, Properties),

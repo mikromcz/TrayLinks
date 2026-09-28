@@ -57,8 +57,8 @@ FolderPath=%OneDrive%\Links
 
 ; Dark mode setting (true/false or 1/0)
 ; true = Dark mode with Windows 11 dark theme
-; false = Light mode with Windows 11 light theme
-DarkMode=true
+; false = Light mode with Windows 11 light theme (default)
+DarkMode=false
 
 [Advanced]
 ; Icon index from imageres.dll (optional)
@@ -104,11 +104,11 @@ FolderPath=\\server\shared\tools
 - **Left-click tray icon**: Toggle folder menu
 - **Double-click tray icon**: Open root folder in Explorer
 - **Right-click tray icon**: Show context menu with options
-- **Single-click item**: Navigate into folders
+- **Single-click item**: Navigate into folders (at the deepest level, opens the folder in Explorer)
 - **Double-click item**: Open files/shortcuts
 - **Right-click item**: Show context menu (Open Location, Copy Path, Properties)
 - **Hover over long names**: Display tooltip with full filename
-- **Click outside menus**: Close all menus
+- **Click outside menus**: Close all menus (left, right or middle button)
 
 ### Keyboard Shortcuts:
 - **Win + F**: Toggle folder menu
@@ -165,8 +165,8 @@ Set `MaxLevels` to control how deep the menus can go (1-5 levels supported).
 - Try running AutoHotkey as administrator
 
 ### Menus Don't Appear:
-- Check that the folder path contains files or subfolders
-- Verify the folder isn't empty or all files are hidden
+- A menu showing only "(Empty)" means the folder has nothing visible in it - check
+  that `FolderPath` points where you expect, and that its files aren't all hidden
 - Try the Win+F hotkey as an alternative
 
 ### Environment Variables Not Working:
@@ -202,8 +202,8 @@ Set `MaxLevels` to control how deep the menus can go (1-5 levels supported).
 - **Fluent Design**: Authentic Windows 11 appearance with proper rounded corners
 - **Drop Shadows**: Modern elevation effects using Windows DWM APIs
 - **Color Schemes**: 
-  - **Dark Mode**: `#2D2D2D` backgrounds with `#3C3C3C` elevated surfaces
-  - **Light Mode**: `#F9F9F9` backgrounds with pure white cards
+  - **Light Mode** (default): white `#FFFFFF` surface with black text
+  - **Dark Mode**: `#3C3C3C` surface with white text
 - **Typography**: Segoe UI Variable font with semi-bold titles
 - **File Type Icons**: Smart contextual icons:
   - 🗂️ Folders
