@@ -97,6 +97,7 @@ TrayLinks/
 ├── TrayLinks.ini          # Configuration file (auto-generated)
 ├── AutoHotkey64.exe       # AutoHotkey v2 interpreter
 ├── README.md              # User documentation
+├── CHANGELOG.md           # Release notes, newest first
 ├── LICENSE.txt            # MIT license
 └── .vscode/settings.json  # VS Code AutoHotkey configuration
 ```
@@ -218,4 +219,4 @@ When modifying the script:
 - **Icon Mapping**: Add new file types to the `fileIconMap` Map, not as if-chains. ListView items use emoji in their text; menu items use `Menu.SetIcon()` instead, since emoji in a menu label fall back to a monochrome symbol font and leave the icon gutter empty
 - **Helper Extraction**: Keep `ShowFolderContents()` lean by delegating to helpers like `ScanFolder()` and `CalculateMenuPosition()`
 - **Magic Numbers**: Put layout values in the `MENU_*` constants near the top, not inline. `MENU_PADDING` drives left/right spacing and the ListView width; `MENU_LIST_TOP` and `MENU_BOTTOM_PADDING` drive the vertical gaps; `MENU_ROW_HEIGHT` is shared by window sizing and tooltip hit-testing
-- **Version**: Update both the JSDoc `@version` header and the `SCRIPT_VERSION` constant
+- **Version**: Update both the JSDoc `@version` header and the `SCRIPT_VERSION` constant, and add a `CHANGELOG.md` entry
