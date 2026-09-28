@@ -11,29 +11,36 @@ TrayLinks is a modern AutoHotkey v2.0 script that creates a sophisticated system
 ### Main Script Structure (TrayLinks.ahk)
 The script follows a functional architecture with these key components:
 
-1. **Configuration Management** (`TrayLinks.ahk:18-195`)
+1. **Configuration Management** (`TrayLinks.ahk:18-167`)
    - INI file handling with automatic creation of default config
    - Environment variable expansion via `ExpandPath()` using WScript.Shell COM
    - Custom INI parser (`ParseIniValue()`) for Unicode support
-   - `DefaultConfig()` fallback for error cases
+   - `DefaultConfig()` is the single source of fallbacks: `ReadConfig()` validates
+     each value on its own and falls back per setting, so one typo cannot discard
+     the rest of the file. MaxLevels is clamped to 1-5
    - Support for FolderPath, DarkMode, IconIndex, and MaxLevels settings
 
-2. **Windows 11 GUI System** (`TrayLinks.ahk:234-339`)
+2. **Windows 11 GUI System** (`TrayLinks.ahk:220-322`)
    - `darkColors` / `lightColors` objects with authentic Windows 11 color schemes
    - `ApplyWindows11Styling()` for DWM API rounded corners and drop shadows
    - `fileIconMap` Map-based lookup for 30+ file extension-to-icon mappings
    - `GetColors()` theme selector based on config
 
-3. **Helper Functions** (`TrayLinks.ahk:341-405`)
+3. **Helper Functions** (`TrayLinks.ahk:325-379`)
    - `IsTrayWindow()` - checks if a window belongs to the system tray area
    - `DefaultConfig()` - centralized fallback configuration
    - `CalculateMenuHeight()` - dynamic window height calculation
    - `ScanFolder()` - scans directory returning `{folders, files}` arrays
-   - `CalculateMenuPosition()` - calculates cascading menu position with screen bounds clamping
+   - `CalculateMenuPosition()` - cascading position, clamped to `GetWorkAreaAt()`:
+     the work area of the monitor under the mouse, so menus stay off the taskbar and
+     on the right monitor. Converts the menu's logical size to screen pixels first,
+     since `Gui.Show` DPI-scales w/h but not x/y
 
-4. **Event Handling** (`TrayLinks.ahk:442-707`)
-   - `ItemClick()` - single-click navigation for folders with consistent submenu closing
+4. **Event Handling** (`TrayLinks.ahk:426-698`)
+   - `ItemClick()` - single-click navigation for folders with consistent submenu closing;
+     at `maxLevels` there is no room for another menu, so the folder opens in Explorer
    - `ItemDoubleClick()` - opens files/shortcuts
+   - `OpenItem()` - shared Run-then-close for files, shortcuts and max-depth folders
    - `ItemContextMenu()` - right-click context menu with file operations
    - `ShowItemContextMenu()` - creates menu with Open Location, Copy Path, Properties
    - `SetMenuItemIcon()` - `Menu.SetIcon()` per item from `ICON_FILE`, so icons sit in the gutter
@@ -42,30 +49,40 @@ The script follows a functional architecture with these key components:
      Used by both the item context menu and the tray menu
    - `EnableDarkMenus()` - opts the process into dark popup menus in dark mode
    - Tooltip monitoring (`CheckForTooltips()`) split into `HoveredItem()` hit-testing,
-     `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`
+     `ShowItemTooltip()` and `ClearTooltip()`, for names longer than `TOOLTIP_MIN_LENGTH`.
+     `MouseGetPos` flag 2 finds the ListView actually on top; `HoveredItem()` then asks
+     it via `LVM_SUBITEMHITTEST`. Do not go back to dividing by a row height - that
+     counts visible rows, not items, so it breaks on scrolled lists and at DPI scaling
 
-5. **Menu Management** (`TrayLinks.ahk:408-440`)
+5. **Menu Management** (`TrayLinks.ahk:392-423`)
    - `CloseAllMenus()` - destroys all GUIs and resets state
    - `CloseMenusAtLevel()` - hierarchical closing using while-loop from maxLevels down
    - `currentGuis` Map for multi-level GUI state tracking
 
-6. **Menu Creation** (`TrayLinks.ahk:762-871`)
+6. **Menu Creation** (`TrayLinks.ahk:787-911`)
    - `ShowFolderContents()` - core function that creates GUI, populates ListView, positions window
+   - `AddItemList()` builds and fills the ListView; `AddEmptyLabel()` stands in for it
+     when a folder has nothing to show. An empty menu has `menuGui.listView := ""`,
+     so anything reading `.listView` must check `IsObject()` first
    - Uses `ScanFolder()` for directory enumeration
    - Uses `CalculateMenuPosition()` for cascading placement
    - Hides horizontal scrollbar for large folders via DllCall
 
-7. **Global Click Detection** (`TrayLinks.ahk:874-955`)
-   - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection
+7. **Global Click Detection** (`TrayLinks.ahk:914-997`)
+   - `LowLevelMouseProc()` - low-level mouse hook for reliable click-outside detection.
+     Reacts to left, right and middle button-up, as native menus do
    - `InstallMouseHook()` / `RemoveMouseHook()` - the hook exists only while a menu is
      open, so the script stays out of the global mouse path while idle
    - Uses `IsTrayWindow()` to avoid closing when clicking tray area
    - Race condition safe: GUI handle access wrapped in try-catch
 
-8. **Entry Points** (`TrayLinks.ahk:961-979`)
+8. **Entry Points** (`TrayLinks.ahk:1003-1030`)
    - `ToggleMenu()` - shared show/hide logic
    - `TrayIconClick()` - left-click toggles menu, double-click opens root folder
    - `Win+F` hotkey - keyboard toggle for menu visibility
+   - `Esc` hotkey - closes all menus. Needed because the menus are shown `NoActivate`
+     and never get keyboard focus. Scoped with `#HotIf` to while a menu is open and no
+     popup menu (`#32768`) is up, so Esc otherwise reaches other apps untouched
 
 ### Configuration System
 - **Primary Config**: `TrayLinks.ini` (auto-generated if missing)
@@ -78,9 +95,14 @@ menus (tray and item context) are standard Win32 menus painted by Windows, so
 they follow `EnableDarkMenus()` instead - see the dark mode note under Windows
 API Integration.
 
-Two authentic Windows 11 themes controlled by DarkMode setting:
-- **Dark Mode**: `#2D2D2D` background, `#3C3C3C` elevated surfaces, `#005FB8` accent
-- **Light Mode**: `#F9F9F9` background, white elevated surfaces, `#005FB8` accent
+Two Windows 11 themes controlled by the DarkMode setting. Light is the default:
+the generated INI says `DarkMode=false` and a missing value falls back to light.
+- **Light Mode**: white `#FFFFFF` surface, black text, `#D1D1D1` border
+- **Dark Mode**: `#3C3C3C` surface, white text, `#5A5A5A` border
+- `textSecondary` (muted text) is used by the "(Empty)" label
+
+Each palette holds only the four keys that are actually painted. Add a key when
+something reads it, not before.
 - **Typography**: Segoe UI Variable font with semi-bold titles and proper hierarchy
 
 ## Development Environment
@@ -119,16 +141,16 @@ TrayLinks/
 
 ### Key Functions to Understand
 
-1. **ShowFolderContents()** (`TrayLinks.ahk:762`) - Core menu creation with Windows 11 styling
-2. **ApplyWindows11Styling()** (`TrayLinks.ahk:284`) - DWM API integration for modern appearance
-3. **GetFileIcon()** (`TrayLinks.ahk:335`) - Map-based file type icon lookup
-4. **ScanFolder()** (`TrayLinks.ahk:711`) - Single-pass directory scan returning folders and files arrays
-5. **CalculateMenuPosition()** (`TrayLinks.ahk:733`) - Cascading menu positioning with screen bounds
-6. **CalculateMenuHeight()** (`TrayLinks.ahk:389`) - Dynamic height calculation for consistent padding
+1. **ShowFolderContents()** (`TrayLinks.ahk:843`) - Core menu creation with Windows 11 styling
+2. **ApplyWindows11Styling()** (`TrayLinks.ahk:261`) - DWM API integration for modern appearance
+3. **GetFileIcon()** (`TrayLinks.ahk:319`) - Map-based file type icon lookup
+4. **ScanFolder()** (`TrayLinks.ahk:702`) - Single-pass directory scan returning folders and files arrays
+5. **CalculateMenuPosition()** (`TrayLinks.ahk:731`) - Cascading menu positioning with screen bounds
+6. **CalculateMenuHeight()** (`TrayLinks.ahk:373`) - Dynamic height calculation for consistent padding
 7. **ReadConfig()** (`TrayLinks.ahk:113`) - INI parsing with DarkMode support
-8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:924`) - Mouse hook lifecycle
-9. **IsTrayWindow()** (`TrayLinks.ahk:341`) - Tray area window detection helper
-10. **DefaultConfig()** (`TrayLinks.ahk:353`) - Centralized fallback configuration
+8. **InstallMouseHook()** / **RemoveMouseHook()** (`TrayLinks.ahk:966`) - Mouse hook lifecycle
+9. **IsTrayWindow()** (`TrayLinks.ahk:325`) - Tray area window detection helper
+10. **DefaultConfig()** (`TrayLinks.ahk:337`) - Centralized fallback configuration
 
 ## User Interface Guidelines
 
@@ -136,13 +158,16 @@ TrayLinks/
 - Menus appear left-to-right in cascading fashion
 - Level 1 appears at mouse cursor position
 - Subsequent levels position to the left of previous level
-- Auto-positioning prevents off-screen menus
+- Auto-positioning keeps menus inside the work area of the monitor under the mouse
+- Esc, or any mouse button clicked outside the menus, closes them all
 
 ### File Display Rules
 - Folders show first with 🗂️ icon (modern file folder)
 - Files show contextual icons: 📄 documents, 🎬 videos, 🖼️ images, etc.
 - File extensions are hidden in display for cleaner appearance
-- Hidden files and desktop.ini are automatically filtered out
+- Hidden items, system files, desktop.ini and dot-files are filtered out. The system
+  check is files-only: Windows can mark a folder system just to give it a custom icon
+- An empty folder shows a greyed "(Empty)" label instead of a blank row
 - Two-column ListView provides precise left padding control
 - Tooltips display full filenames for items longer than 24 characters
 - Right-click context menu provides file operations (Open Location, Copy Path, Properties),
@@ -195,6 +220,11 @@ Key Windows API usage:
   colour, giving black-on-dark
 - **WScript.Shell**: Environment variable expansion with error handling
 - **WindowFromPoint / IsChild**: Window identification in mouse hook
+- **LVM_SUBITEMHITTEST / ScreenToClient**: Tooltip hit-testing, exact under scrolling and DPI scaling
+- **MonitorGet / MonitorGetWorkArea**: Per-monitor, taskbar-aware menu placement
+- **HRESULT, not exceptions**: `DllCall` only throws when a function cannot be called.
+  Most Windows APIs report failure through their return value, so a `try` alone
+  never sees it - check the result (see `ApplyWindows11Styling()`, `ShowItemProperties()`)
 
 ## Testing Considerations
 
@@ -218,5 +248,5 @@ When modifying the script:
 - **ListView Management**: Use two-column approach for padding control
 - **Icon Mapping**: Add new file types to the `fileIconMap` Map, not as if-chains. ListView items use emoji in their text; menu items use `Menu.SetIcon()` instead, since emoji in a menu label fall back to a monochrome symbol font and leave the icon gutter empty
 - **Helper Extraction**: Keep `ShowFolderContents()` lean by delegating to helpers like `ScanFolder()` and `CalculateMenuPosition()`
-- **Magic Numbers**: Put layout values in the `MENU_*` constants near the top, not inline. `MENU_PADDING` drives left/right spacing and the ListView width; `MENU_LIST_TOP` and `MENU_BOTTOM_PADDING` drive the vertical gaps; `MENU_ROW_HEIGHT` is shared by window sizing and tooltip hit-testing
+- **Magic Numbers**: Put layout values in the `MENU_*` constants near the top, not inline. `MENU_PADDING` drives left/right spacing and the ListView width; `MENU_LIST_TOP` and `MENU_BOTTOM_PADDING` drive the vertical gaps; `MENU_ROW_HEIGHT` sizes the window only - hit-testing asks the ListView instead
 - **Version**: Update both the JSDoc `@version` header and the `SCRIPT_VERSION` constant, and add a `CHANGELOG.md` entry

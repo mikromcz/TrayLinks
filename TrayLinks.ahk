@@ -48,7 +48,7 @@ FolderPath=%OneDrive%\Links
 
 ; Dark mode setting (true/false or 1/0)
 ; true = Dark mode, false = Light mode
-DarkMode=true
+DarkMode=false
 
 [Advanced]
 ; Icon index from imageres.dll (optional)
@@ -113,50 +113,41 @@ ParseIniValue(iniContent, section, key, defaultValue) {
 ReadConfig() {
     global iniFile
 
+    ; Fallbacks for missing or invalid values all come from here, so a default
+    ; only ever has to change in one place
+    defaults := DefaultConfig()
+
     ; Check if INI file exists, create if not
-    if (!FileExist(iniFile)) {
-        if (!CreateDefaultIni()) {
-            ; If we can't create INI, use fallback
-            return DefaultConfig()
-        }
-    }
+    if (!FileExist(iniFile) && !CreateDefaultIni())
+        return defaults
 
     ; Read settings from INI with UTF-8 encoding support
     try {
-        ; Use FileRead with UTF-8 encoding to handle Unicode characters
-        iniContent := ""
-        try {
-            iniContent := FileRead(iniFile, "UTF-8")
-        } catch {
-            ; Fallback to default encoding
-            iniContent := FileRead(iniFile)
-        }
-
-        ; Parse INI content manually to handle Unicode properly
-        rawPath := ParseIniValue(iniContent, "Settings", "FolderPath", "%OneDrive%\Links")
-        darkModeRaw := ParseIniValue(iniContent, "Settings", "DarkMode", "false")
-        iconIndex := ParseIniValue(iniContent, "Advanced", "IconIndex", "4")
-        maxLevels := ParseIniValue(iniContent, "Advanced", "MaxLevels", "3")
-
-        ; Expand environment variables in the path
-        expandedPath := ExpandPath(rawPath)
-
-        ; Parse dark mode setting (handle true/false, 1/0, yes/no)
-        darkMode := true
-        darkModeRaw := Trim(StrLower(darkModeRaw))
-        if (darkModeRaw = "false" || darkModeRaw = "0" || darkModeRaw = "no") {
-            darkMode := false
-        }
-
-        return {
-            folderPath: expandedPath,
-            iconIndex: Integer(iconIndex),
-            maxLevels: Integer(maxLevels),
-            darkMode: darkMode
-        }
+        iniContent := FileRead(iniFile, "UTF-8")
     } catch as e {
         MsgBox("Error reading INI file: " . e.Message . "`nUsing default settings.", "Warning", "Icon!")
-        return DefaultConfig()
+        return defaults
+    }
+
+    ; Parse INI content manually to handle Unicode properly
+    rawPath := ParseIniValue(iniContent, "Settings", "FolderPath", "%OneDrive%\Links")
+    darkModeRaw := StrLower(Trim(ParseIniValue(iniContent, "Settings", "DarkMode", "")))
+    iconIndex := ParseIniValue(iniContent, "Advanced", "IconIndex", "")
+    maxLevels := ParseIniValue(iniContent, "Advanced", "MaxLevels", "")
+
+    ; Parse dark mode setting (handle true/false, 1/0, yes/no)
+    darkMode := defaults.darkMode
+    if (darkModeRaw != "")
+        darkMode := !(darkModeRaw = "false" || darkModeRaw = "0" || darkModeRaw = "no")
+
+    ; Each value is validated on its own, so a typo in one setting falls back
+    ; for that setting only instead of discarding the whole file. MaxLevels is
+    ; clamped to the documented 1-5; below 1, closing menus stops working.
+    return {
+        folderPath: ExpandPath(rawPath),
+        iconIndex: IsInteger(iconIndex) ? Integer(iconIndex) : defaults.iconIndex,
+        maxLevels: IsInteger(maxLevels) ? Max(1, Min(Integer(maxLevels), 5)) : defaults.maxLevels,
+        darkMode: darkMode
     }
 }
 
@@ -173,13 +164,8 @@ if (!DirExist(folderPath)) {
 
     ; Offer to open INI file for editing
     result := MsgBox("Would you like to open the configuration file for editing?", "Edit Configuration", "YesNo Icon?")
-    if (result = "Yes") {
-        try {
-            Run("notepad.exe `"" . iniFile . "`"")
-        } catch {
-            Run(iniFile)  ; Fallback to default associated program
-        }
-    }
+    if (result = "Yes")
+        EditConfig()
     ExitApp
 }
 
@@ -236,6 +222,7 @@ global currentGuis := Map()      ; Store GUIs by level (1, 2, 3)
 global isMenuVisible := false
 global mouseHook := 0            ; Low-level mouse hook handle (0 = not installed)
 global mouseHookCallback := 0    ; Callback address, created once at startup
+global lastTooltipItem := ""     ; Text of the tooltip currently shown ("" = none)
 
 ; Menu layout metrics (Windows 11 spacing)
 ; Horizontal layout:  |<- PADDING ->|<- ListView ->|<- PADDING ->|
@@ -244,34 +231,24 @@ global MENU_WIDTH := 200         ; Menu window width
 global MENU_PADDING := 5         ; Gap between the window edge and the ListView (left/right)
 global MENU_TITLE_INDENT := 6    ; Extra title indent, to line the title up with the item text
 global MENU_LIST_TOP := 36       ; Y position of the ListView = height of the title area
-global MENU_ROW_HEIGHT := 20     ; ListView row height - used for sizing and hit-testing
+global MENU_ROW_HEIGHT := 20     ; ListView row height - used to size the menu window
 global MENU_MAX_ROWS := 40       ; Rows shown before the ListView starts scrolling
 global MENU_BOTTOM_PADDING := 10 ; Gap between the ListView and the bottom window edge
 global TOOLTIP_MIN_LENGTH := 24  ; Show a tooltip only for names longer than this
 
 ; Windows 11 Fluent Design color schemes
 global darkColors := {
-    background: "2D2D2D",      ; Windows 11 dark background
-    backgroundCard: "3C3C3C",  ; Card/elevated surface
-    text: "FFFFFF",
-    textSecondary: "C5C5C5",   ; Secondary text
-    border: "484848",          ; Subtle border
-    borderAccent: "5A5A5A",    ; Accent border
-    selected: "005FB8",        ; Windows 11 accent blue
-    selectedHover: "0078D4",   ; Hover state
-    shadow: "000000"
+    backgroundCard: "3C3C3C",  ; Menu surface (window and ListView)
+    text: "FFFFFF",            ; Title and item text
+    textSecondary: "C5C5C5",   ; Muted text - the "(Empty)" label
+    borderAccent: "5A5A5A"     ; DWM window border
 }
 
 global lightColors := {
-    background: "F9F9F9",      ; Windows 11 light background (slightly off-white)
-    backgroundCard: "FFFFFF",  ; Card/elevated surface
-    text: "000000",
-    textSecondary: "605E5C",   ; Secondary text
-    border: "E1DFDD",          ; Subtle border
-    borderAccent: "D1D1D1",    ; Accent border
-    selected: "005FB8",        ; Windows 11 accent blue
-    selectedHover: "0078D4",   ; Hover state
-    shadow: "00000020"         ; Light shadow with transparency
+    backgroundCard: "FFFFFF",  ; Menu surface (window and ListView)
+    text: "000000",            ; Title and item text
+    textSecondary: "605E5C",   ; Muted text - the "(Empty)" label
+    borderAccent: "D1D1D1"     ; DWM window border
 }
 
 ; Function to get current color scheme based on config
@@ -282,21 +259,28 @@ GetColors() {
 
 ; Apply Windows 11 modern styling to GUI windows
 ApplyWindows11Styling(hwnd) {
-    ; Apply drop shadow and rounded corners using DWM API
+    ; DwmSetWindowAttribute reports an unsupported attribute through its
+    ; HRESULT rather than by throwing, so the result has to be checked for the
+    ; older-Windows fallback below to ever run
     try {
         ; Enable drop shadow
         DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)
 
-        ; Set rounded corners (Windows 11 style)
-        ; DWMWCP_ROUND = 2 for rounded corners
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 33, "UInt*", 2, "UInt", 4)
+        ; Set rounded corners (Windows 11 style) - DWMWCP_ROUND = 2, S_OK = 0
+        rounded := DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 33, "UInt*", 2, "UInt", 4) = 0
 
-        ; Set border color to match theme
-        colors := GetColors()
-        borderColor := "0x" colors.borderAccent
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 34, "UInt*", borderColor, "UInt", 4)
+        ; Set border color to match theme. DWM takes a COLORREF, which is
+        ; 0x00BBGGRR, so the RGB palette value needs red and blue swapped
+        rgb := Integer("0x" GetColors().borderAccent)
+        bgr := ((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF)
+        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 34, "UInt*", bgr, "UInt", 4)
     } catch {
-        ; Fallback for older Windows versions - just apply a subtle border
+        rounded := false
+    }
+
+    ; Before Windows 11 there are no rounded corners or DWM border colours, and
+    ; the borderless ListView leaves nothing else outlining the menu
+    if (!rounded) {
         try {
             WinSetStyle("+0x800000", hwnd)  ; WS_BORDER
         }
@@ -349,7 +333,7 @@ IsTrayWindow(winHwnd) {
     }
 }
 
-; Default configuration fallback
+; Default configuration fallback - keep in step with CreateDefaultIni()
 DefaultConfig() {
     return {
         folderPath: EnvGet("OneDrive") . "\Links",
@@ -438,7 +422,7 @@ CloseMenusAtLevel(level) {
     }
 }
 
-; Handle ListView item click - Just select the item
+; Handle ListView item click - folders open as a submenu one level deeper
 ItemClick(level, ctrl, *) {
     global config
 
@@ -453,12 +437,13 @@ ItemClick(level, ctrl, *) {
     ; Close deeper level menus regardless of item type
     CloseMenusAtLevel(level + 1)
 
-    ; For folders, navigate into the folder
+    ; Folders open as a submenu one level deeper. At the deepest level there is
+    ; no room for another menu, so the folder opens in Explorer instead.
     if (item.type = "folder") {
-        if (level >= config.maxLevels)
-            return
-
-        ShowFolderContents(item.path, level + 1)
+        if (level < config.maxLevels)
+            ShowFolderContents(item.path, level + 1)
+        else
+            OpenItem(item)
     }
 }
 
@@ -473,14 +458,17 @@ ItemDoubleClick(ctrl, *) {
     item := ctrl.itemData[rowNum]
 
     ; Only process for non-folder items (files/shortcuts)
-    if (item.type != "folder") {
-        ; It's a file or shortcut - open it and close all menus
-        try {
-            Run(item.path)
-            CloseAllMenus()
-        } catch as e {
-            MsgBox("Error opening file: " e.Message, "Error", "Icon!")
-        }
+    if (item.type != "folder")
+        OpenItem(item)
+}
+
+; Open a file, shortcut or folder with its default handler, then close the menus
+OpenItem(item) {
+    try {
+        Run(item.path)
+        CloseAllMenus()
+    } catch as e {
+        MsgBox("Error opening " . item.name . ": " . e.Message, "Error", "Icon!")
     }
 }
 
@@ -577,43 +565,33 @@ CopyItemPath(itemData) {
 
 ; Show Windows properties dialog for the item
 ShowItemProperties(itemData) {
+    ; ShellExecute reports failure through its return value - 32 or below is an
+    ; error code - rather than by throwing, so that is what gets checked
     try {
-        ; Use ShellExecute with "properties" verb to show Properties dialog only
-        DllCall("shell32.dll\ShellExecuteW",
+        result := DllCall("shell32.dll\ShellExecuteW",
             "Ptr", 0,                    ; hwnd
             "WStr", "properties",        ; verb
             "WStr", itemData.path,       ; file
             "WStr", "",                  ; parameters
             "WStr", "",                  ; directory
-            "Int", 1)                    ; show command
-
-    } catch as e {
-        ; Fallback: try alternative method using rundll32
-        try {
-            Run('rundll32.exe shell32.dll,OpenAs_RunDLL "' . itemData.path . '"')
-        } catch as e2 {
-            MsgBox("Error showing properties: " . e.Message, "Error", "Icon!")
-        }
+            "Int", 1,                    ; show command
+            "Ptr")                       ; returns an HINSTANCE, > 32 on success
+    } catch {
+        result := 0
     }
+
+    if (result <= 32)
+        MsgBox("Could not show properties for:`n" . itemData.path, "Error", "Icon!")
 }
 
-; Simple tooltip tracking variables
-global tooltipActive := false
-global lastTooltipItem := ""
-
-; Start tooltip monitoring when menus are visible
+; Start tooltip monitoring when menus are visible. Re-arming a timer that is
+; already running just restarts its interval, so no guard flag is needed.
 StartTooltipMonitoring() {
-    global tooltipActive
-    if (!tooltipActive) {
-        tooltipActive := true
-        SetTimer(CheckForTooltips, 100)  ; Check every 100ms
-    }
+    SetTimer(CheckForTooltips, 100)  ; Check every 100ms
 }
 
 ; Stop tooltip monitoring when menus close
 StopTooltipMonitoring() {
-    global tooltipActive
-    tooltipActive := false
     SetTimer(CheckForTooltips, 0)
 
     ; Clear the tooltip AND the last-shown name, otherwise hovering the same
@@ -630,43 +608,56 @@ CheckForTooltips() {
         return
     }
 
-    MouseGetPos(&mouseX, &mouseY)
+    ; Ask Windows which control is really under the mouse, so where menus
+    ; overlap, the one on top gets the hover rather than the one beneath it
+    MouseGetPos(&mouseX, &mouseY, , &ctrlHwnd, 2)
 
-    ; Check each active menu GUI
     for level, gui in currentGuis {
-        item := HoveredItem(gui, mouseX, mouseY)
+        try {
+            if (!IsObject(gui.listView) || gui.listView.Hwnd != ctrlHwnd)
+                continue
+        } catch {
+            ; Ignore errors with destroyed windows - just skip this GUI
+            continue
+        }
+
+        item := HoveredItem(gui.listView, mouseX, mouseY)
         if (IsObject(item)) {
             ShowItemTooltip(item, mouseX, mouseY)
             return
         }
+        break
     }
 
     ; Mouse not over any ListView item - clear tooltip
     ClearTooltip()
 }
 
-; Return the item under the given screen position in a menu, or "" if none
-HoveredItem(gui, mouseX, mouseY) {
+; Return the ListView item under the given screen position, or "" if none.
+;
+; The ListView is asked directly (LVM_SUBITEMHITTEST) rather than the mouse
+; offset being divided by a row height. That arithmetic counted visible rows,
+; not items, so a scrolled list reported the wrong item - and it mixed
+; physical and DPI-scaled pixels, so it drifted at any display scaling but 100%.
+HoveredItem(listView, mouseX, mouseY) {
+    static LVM_SUBITEMHITTEST := 0x1039
+
     try {
-        ; Check if mouse is over this GUI
-        WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " gui.Hwnd)
-        if (mouseX < winX || mouseX > winX + winW || mouseY < winY || mouseY > winY + winH)
-            return ""
+        ; LVHITTESTINFO: POINT pt, UINT flags, int iItem, int iSubItem, int iGroup
+        hitInfo := Buffer(24, 0)
+        NumPut("Int", mouseX, "Int", mouseY, hitInfo)
 
-        ; Check if mouse is over the ListView (position is relative to the GUI)
-        gui.listView.GetPos(&lvX, &lvY, &lvW, &lvH)
-        relX := mouseX - (winX + lvX)
-        relY := mouseY - (winY + lvY)
-        if (relX < 0 || relX > lvW || relY < 0 || relY > lvH)
-            return ""
+        ; pt starts in screen coordinates; the ListView wants its own
+        DllCall("ScreenToClient", "Ptr", listView.Hwnd, "Ptr", hitInfo)
 
-        ; Determine which row the mouse is over
-        rowIndex := Floor(relY / MENU_ROW_HEIGHT) + 1
-        itemData := gui.listView.itemData
+        ; Returns the 0-based item index, or -1 when the point is not on an item
+        index := DllCall("SendMessage", "Ptr", listView.Hwnd, "UInt", LVM_SUBITEMHITTEST,
+            "Ptr", 0, "Ptr", hitInfo, "Int")
 
-        return (rowIndex > 0 && rowIndex <= itemData.Length) ? itemData[rowIndex] : ""
+        itemData := listView.itemData
+        return (index >= 0 && index < itemData.Length) ? itemData[index + 1] : ""
     } catch {
-        ; Ignore errors with destroyed windows - just skip this GUI
+        ; Ignore errors with destroyed windows
         return ""
     }
 }
@@ -716,10 +707,17 @@ ScanFolder(folderToShow) {
     try {
         loop files, folderToShow "\*", "FD"
         {
+            ; Skip hidden items (Office ~$ lock files, for one), system files and
+            ; dot-files. The system check is files-only: Windows can mark a folder
+            ; system just so it reads that folder's desktop.ini for a custom icon.
+            attrib := A_LoopFileAttrib
+            isFolder := InStr(attrib, "D")
+            if (InStr(attrib, "H") || (!isFolder && InStr(attrib, "S")))
+                continue
             if (A_LoopFileName = "desktop.ini" || SubStr(A_LoopFileName, 1, 1) = ".")
                 continue
 
-            if (InStr(A_LoopFileAttrib, "D"))
+            if (isFolder)
                 folders.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "folder" })
             else
                 files.Push({ name: A_LoopFileName, path: A_LoopFileFullPath, type: "file" })
@@ -733,29 +731,112 @@ ScanFolder(folderToShow) {
 CalculateMenuPosition(level, winWidth, menuHeight) {
     global currentGuis
 
+    MouseGetPos(&mouseX, &mouseY)
+
+    ; Gui.Show scales w/h for display scaling but takes x/y as raw screen
+    ; pixels, so the size is converted before being mixed with positions.
+    ; At 100% scaling this changes nothing.
+    scale := A_ScreenDPI / 96
+    screenWidth := Round(winWidth * scale)
+    screenHeight := Round(menuHeight * scale)
+
     if (level = 1) {
-        MouseGetPos(&mouseX, &mouseY)
         winX := mouseX - 100
         winY := mouseY - 40
     } else {
         prevGui := currentGuis.Has(level - 1) ? currentGuis[level - 1] : ""
 
         if (IsObject(prevGui)) {
-            WinGetPos(&prevX, &prevY, &prevW, &prevH, "ahk_id " prevGui.Hwnd)
-            winX := prevX - winWidth - 5
+            WinGetPos(&prevX, &prevY, , , "ahk_id " prevGui.Hwnd)
+            winX := prevX - screenWidth - 5
             winY := prevY
         } else {
-            MouseGetPos(&mouseX, &mouseY)
-            winX := mouseX - (level * (winWidth + 5))
+            winX := mouseX - (level * (screenWidth + 5))
             winY := mouseY - 40
         }
     }
 
-    ; Clamp to screen bounds
-    winX := Max(10, Min(winX, A_ScreenWidth - winWidth - 20))
-    winY := Max(10, Min(winY, A_ScreenHeight - menuHeight - 20))
+    ; Keep the menu inside the usable area of the monitor under the mouse -
+    ; not the primary screen, and not over the taskbar
+    area := GetWorkAreaAt(mouseX, mouseY)
+    winX := Max(area.left + 10, Min(winX, area.right - screenWidth - 20))
+    winY := Max(area.top + 10, Min(winY, area.bottom - screenHeight - 20))
 
     return { x: winX, y: winY }
+}
+
+; Usable area (screen minus taskbar) of the monitor containing the given point.
+; The monitor is found by its full bounds, since a tray click lands on the
+; taskbar - which is outside every work area.
+GetWorkAreaAt(x, y) {
+    monitor := MonitorGetPrimary()
+    loop MonitorGetCount() {
+        MonitorGet(A_Index, &left, &top, &right, &bottom)
+        if (x >= left && x < right && y >= top && y < bottom) {
+            monitor := A_Index
+            break
+        }
+    }
+
+    MonitorGetWorkArea(monitor, &left, &top, &right, &bottom)
+    return { left: left, top: top, right: right, bottom: bottom }
+}
+
+; Add the ListView of a folder's contents, folders first, and attach it to the
+; menu as menuGui.listView
+AddItemList(menuGui, level, scanned, displayRows, colors) {
+    ; Create ListView with row count - borderless so it blends into the window:
+    ; -E0x200 drops WS_EX_CLIENTEDGE (the light gray frame), -Border drops WS_BORDER
+    listViewWidth := MENU_WIDTH - (MENU_PADDING * 2)
+    listViewOpts := "x" MENU_PADDING " y" MENU_LIST_TOP " w" listViewWidth " r" displayRows
+    listViewOpts .= " -Multi -Hdr -Border -E0x200 Background" colors.backgroundCard " c" colors.text
+    listView := menuGui.Add("ListView", listViewOpts, ["", "Name"])
+
+    ; Set column widths first: first column 0px (invisible), second column full width for proper selection
+    listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
+    listView.ModifyCol(2, listViewWidth)        ; Second column fills the rest for full-width selection
+
+    ; Add event handlers for click, double-click, and right-click
+    listView.OnEvent("Click", ItemClick.Bind(level))
+    listView.OnEvent("DoubleClick", ItemDoubleClick)
+    listView.OnEvent("ContextMenu", ItemContextMenu)
+
+    ; Add items to the ListView (folders first) - row order matches itemData order
+    listItems := []
+
+    ; Add folders with Windows 11 style icons - using second column
+    for folder in scanned.folders {
+        listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
+        listItems.Push(folder)
+    }
+
+    ; Add files - hide all extensions with modern icons - using second column
+    for file in scanned.files {
+        ; Split filename to remove extension
+        SplitPath(file.name, , , &ext, &nameNoExt)
+
+        ; Choose icon based on file type (Windows 11 style)
+        listView.Add("", "", GetFileIcon(ext) . " " nameNoExt)  ; Empty first column, data in second
+        listItems.Push(file)
+    }
+
+    ; Store items data with the ListView, and the ListView with its GUI
+    listView.itemData := listItems
+    menuGui.listView := listView
+}
+
+; Stand-in for the ListView when a folder has nothing to show: a greyed label
+; where the first row would be, indented like the title so it lines up with
+; where item text would start. +0x200 (SS_CENTERIMAGE) centres it in the row.
+AddEmptyLabel(menuGui, colors) {
+    labelX := MENU_PADDING + MENU_TITLE_INDENT
+    labelWidth := MENU_WIDTH - labelX - MENU_PADDING
+    labelOpts := "x" labelX " y" MENU_LIST_TOP " w" labelWidth " h" MENU_ROW_HEIGHT
+    labelOpts .= " +0x200 c" colors.textSecondary
+    menuGui.Add("Text", labelOpts, "(Empty)")
+
+    ; No ListView here, so tooltip tracking has nothing to hit-test
+    menuGui.listView := ""
 }
 
 ; Create and show folder contents for a given level
@@ -787,58 +868,17 @@ ShowFolderContents(folderToShow, level := 1) {
 
     ; Scan folder contents
     scanned := ScanFolder(folderToShow)
-    folders := scanned.folders
-    files := scanned.files
+    numItems := scanned.folders.Length + scanned.files.Length
 
-    ; Calculate the number of items for listview sizing
-    numItems := folders.Length + files.Length
-
-    ; Ensure at least 1 item height to avoid empty listview
-    if (numItems < 1)
-        numItems := 1
-
-    ; Cap the visible rows - anything beyond that scrolls
-    displayRows := Min(numItems, MENU_MAX_ROWS)
+    ; Cap the visible rows - anything beyond that scrolls. An empty folder still
+    ; takes one row, for its "(Empty)" label.
+    displayRows := Max(1, Min(numItems, MENU_MAX_ROWS))
     needsScrollbar := numItems > MENU_MAX_ROWS
 
-    ; Create ListView with row count - borderless so it blends into the window:
-    ; -E0x200 drops WS_EX_CLIENTEDGE (the light gray frame), -Border drops WS_BORDER
-    listViewWidth := MENU_WIDTH - (MENU_PADDING * 2)
-    listViewOpts := "x" MENU_PADDING " y" MENU_LIST_TOP " w" listViewWidth " r" displayRows
-    listViewOpts .= " -Multi -Hdr -Border -E0x200 Background" colors.backgroundCard " c" colors.text
-    listView := menuGui.Add("ListView", listViewOpts, ["", "Name"])
-
-    ; Set column widths first: first column 0px (invisible), second column full width for proper selection
-    listView.ModifyCol(1, 0)                    ; First column width = 0 (hidden)
-    listView.ModifyCol(2, listViewWidth)        ; Second column fills the rest for full-width selection
-
-    ; Add event handlers for click, double-click, and right-click
-    listView.OnEvent("Click", ItemClick.Bind(level))
-    listView.OnEvent("DoubleClick", ItemDoubleClick)
-    listView.OnEvent("ContextMenu", ItemContextMenu)
-
-    ; Add items to the ListView (folders first) - row order matches itemData order
-    listItems := []
-
-    ; Add folders with Windows 11 style icons - using second column
-    for folder in folders {
-        listView.Add("", "", "🗂️ " folder.name)  ; Empty first column, data in second
-        listItems.Push(folder)
-    }
-
-    ; Add files - hide all extensions with modern icons - using second column
-    for file in files {
-        ; Split filename to remove extension
-        SplitPath(file.name, , , &ext, &nameNoExt)
-
-        ; Choose icon based on file type (Windows 11 style)
-        listView.Add("", "", GetFileIcon(ext) . " " nameNoExt)  ; Empty first column, data in second
-        listItems.Push(file)
-    }
-
-    ; Store items data with the ListView, and the ListView with its GUI
-    listView.itemData := listItems
-    menuGui.listView := listView
+    if (numItems = 0)
+        AddEmptyLabel(menuGui, colors)
+    else
+        AddItemList(menuGui, level, scanned, displayRows, colors)
 
     ; Calculate equivalent height for window sizing
     menuHeight := CalculateMenuHeight(displayRows * MENU_ROW_HEIGHT)
@@ -858,7 +898,7 @@ ShowFolderContents(folderToShow, level := 1) {
         ; Small delay to ensure ListView is fully rendered
         Sleep(20)
         ; Large folders: hide only horizontal scrollbar, keep vertical
-        DllCall("user32.dll\ShowScrollBar", "Ptr", listView.Hwnd, "Int", 0, "Int", 0)  ; SB_HORZ, hide
+        DllCall("user32.dll\ShowScrollBar", "Ptr", menuGui.listView.Hwnd, "Int", 0, "Int", 0)  ; SB_HORZ, hide
     }
 
     ; Store the GUI for this level
@@ -874,8 +914,10 @@ ShowFolderContents(folderToShow, level := 1) {
 LowLevelMouseProc(nCode, wParam, lParam) {
     global isMenuVisible, currentGuis
 
-    ; Only process if menus are visible and it's a left button up
-    if (nCode >= 0 && isMenuVisible && wParam = 0x202) {  ; WM_LBUTTONUP
+    ; Only process if menus are visible and a button was released - left, right
+    ; or middle, since any click outside a native menu dismisses it
+    ; (WM_LBUTTONUP 0x202, WM_RBUTTONUP 0x205, WM_MBUTTONUP 0x208)
+    if (nCode >= 0 && isMenuVisible && (wParam = 0x202 || wParam = 0x205 || wParam = 0x208)) {
         ; Get mouse position from the hook data (MSLLHOOKSTRUCT starts with a POINT)
         mouseX := NumGet(lParam, 0, "Int")  ; x coordinate
         mouseY := NumGet(lParam, 4, "Int")  ; y coordinate
@@ -911,7 +953,7 @@ LowLevelMouseProc(nCode, wParam, lParam) {
 
         ; If clicked outside menus, close them
         if (!clickedOnMenu) {
-            SetTimer(() => CloseAllMenus(), -1)  ; Use timer to avoid hook issues
+            SetTimer(CloseAllMenus, -1)  ; Use timer to avoid hook issues
         }
     }
 
@@ -977,5 +1019,13 @@ TrayIconClick(wParam, lParam, *) {
 
 ; Define a hotkey to force show the menu
 #f::ToggleMenu()  ; Win+F hotkey
+
+; Esc closes the menus. They never take keyboard focus (shown NoActivate), so
+; this has to be a hotkey. It only exists while a menu is open, so Esc reaches
+; other apps normally the rest of the time - and it stands aside while a popup
+; menu (#32768) is up, so Esc closes just the right-click menu first.
+#HotIf isMenuVisible && !WinExist("ahk_class #32768")
+Esc::CloseAllMenus()
+#HotIf
 
 ; End of script
